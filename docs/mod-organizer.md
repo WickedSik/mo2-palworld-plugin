@@ -1163,6 +1163,25 @@ def init(self, organizer):
     return True
 ```
 
+### Anti-pattern: `self._featureMap[...]`
+
+Older `BasicGame` builds exposed a private `_featureMap` dict that you could
+mutate directly to register features, e.g.:
+
+```python
+# DO NOT USE — raises AttributeError on current MO2:
+#   'PalworldGame' object has no attribute '_featureMap'
+self._featureMap[mobase.SaveGameInfo] = BasicGameSaveGameInfo(...)
+```
+
+That attribute does not exist on the version of `BasicGame` shipped with
+current MO2 releases. Sample code that still uses it (often copy-pasted from
+old game plugins or stale tutorials) will fail to load with the error above.
+
+Always go through `organizer.gameFeatures().registerFeature(self, feature,
+priority, replace=...)` from inside `init(organizer)`. Never poke at private
+attributes of `BasicGame`.
+
 ---
 
 ## 17. Settings, persistent storage, and per-mod settings

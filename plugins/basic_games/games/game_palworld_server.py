@@ -26,13 +26,13 @@ class PalworldGame(BasicGame):
     GameDocumentsDirectory = "%GAME_PATH%/Pal/Saved/Config/WindowsServer"
     GameSavesDirectory = "%GAME_PATH%/Pal/Saved/SaveGames/"
 
-    def __init__(self):
-        super().__init__()
-        
     def init(self, organizer: mobase.IOrganizer) -> bool:
         super().init(organizer)
-        self._featureMap[mobase.SaveGameInfo] = BasicGameSaveGameInfo(
-            lambda s: Path(s or "", "level.sav")
+        organizer.gameFeatures().registerFeature(
+            self,
+            BasicGameSaveGameInfo(lambda s: Path(s or "", "level.sav")),
+            0,
+            replace=True,
         )
         return True
   

@@ -29,8 +29,11 @@ class PalworldGame(BasicGame):
 
     def init(self, organizer: mobase.IOrganizer) -> bool:
         super().init(organizer)
-        self._featureMap[mobase.SaveGameInfo] = BasicGameSaveGameInfo(
-            lambda s: Path(s or "", "level.sav")
+        organizer.gameFeatures().registerFeature(
+            self,
+            BasicGameSaveGameInfo(lambda s: Path(s or "", "level.sav")),
+            0,
+            replace=True,
         )
         return True
   
