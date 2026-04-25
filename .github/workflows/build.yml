@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Determine version
         id: version
@@ -34,7 +34,7 @@ jobs:
           unzip -l "release-artifacts/${ZIP_NAME}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PalworldInstaller-${{ steps.version.outputs.version }}
           path: release-artifacts/*.zip
