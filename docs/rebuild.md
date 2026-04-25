@@ -4,7 +4,9 @@ This document is the design spec for the `PalworldInstaller` MO2 plugin: the beh
 
 ## 1. Purpose
 
-`PalworldInstaller` is a custom archive installer (`IPluginInstallerSimple`) for Mod Organizer 2. It takes mod archives intended for Palworld and rewrites their internal file tree into Palworld's expected install layout. It also resolves platform-specific archive structures: many Palworld mod archives ship with top-level `{STEAM}`, `{GAMEPASS}`, and `{XBOX}` folders containing platform-specific variants of the same mod, and the installer picks the right variant based on a configurable per-managed-game setting.
+`PalworldInstaller` is a custom archive installer (`IPluginInstallerSimple`) for Mod Organizer 2. It takes mod archives intended for Palworld and rewrites their internal file tree into Palworld's expected install layout. It also resolves platform-specific archive structures: many Palworld mod archives ship with top-level `{STEAM}` and `{XBOX}` folders containing platform-specific variants of the same mod (legacy archives may use `{GAMEPASS}`, which is treated as a deprecated alias of `{XBOX}`), and the installer picks the right variant based on a configurable per-managed-game setting.
+
+> **Platform unification.** Microsoft's PC Game Pass build of Palworld and the Xbox console build share the WinGDK runtime, so this plugin treats them as a single platform under the canonical name `xbox`. The legacy setting value `gamepass` and the legacy marker folder `{GAMEPASS}` are both accepted as deprecated aliases of `xbox` / `{XBOX}`, with deprecation warnings logged.
 
 This is a clean-room design. Implementation must reproduce the behaviors below from this spec and from direct observation of how Palworld mod archives are structured — not from any prior installer's source code.
 
@@ -62,21 +64,25 @@ UI implementation rules:
 During `install()`, before any pak/lua/json triage runs, scan the archive's top-level entries for canonical marker folders:
 
 - `{STEAM}`
-- `{GAMEPASS}`
 - `{XBOX}`
+- `{GAMEPASS}` — deprecated alias of `{XBOX}`; recognised for compatibility with legacy archives
 
-Match is case-insensitive against the canonical braced form. Anything else (e.g. `STEAM` without braces, `[STEAM]`) is **not** treated as a marker — these are the expected names that real archives ship with.
+Match is case-insensitive against the canonical braced form. Anything else (e.g. `STEAM` without braces, `[STEAM]`, `(STEAM)`) is **not** treated as a marker — these are the expected names that real archives ship with.
 
 If none of the markers are present, skip platform branching entirely.
 
 ### Variant Selection
 
-MO2 supports all three platforms. Xbox installations target Palworld's WinGDK binary layout instead of Win64, but otherwise follow the same selection logic as Steam and Gamepass.
+MO2 supports two platforms: `steam` and `xbox`. Xbox installations target Palworld's WinGDK binary layout instead of Win64, but otherwise follow the same selection logic as Steam.
 
-1. Read the configured platform for the current managed game (see §4). Valid values: `steam`, `gamepass`, `xbox`.
-2. Remove every non-matching variant folder. For example: configured platform is `steam` → remove `{GAMEPASS}` and `{XBOX}`.
-3. Promote the matching folder's contents up to the archive root (move children of `{STEAM}` / `{GAMEPASS}` / `{XBOX}` to root, then remove the empty marker folder).
-4. Hand off to the pak/lua/json triage as if the archive had been authored without platform variants.
+1. Read the configured platform for the current managed game (see §4). Valid values: `steam`, `xbox`.
+2. Identify the matching marker folder for the resolved platform:
+   - For `steam` → `{STEAM}`.
+   - For `xbox` → `{XBOX}` if present, otherwise `{GAMEPASS}` (with a one-line deprecation warning logged: `Archive uses deprecated {GAMEPASS} marker; treat as {XBOX} going forward.`).
+   - When both `{XBOX}` and `{GAMEPASS}` are present in the same archive, `{XBOX}` wins and `{GAMEPASS}` is dropped silently — the archive already has the canonical form.
+3. Remove every non-matching variant folder. For example: configured platform is `steam` → remove `{XBOX}` and `{GAMEPASS}`.
+4. Promote the matching folder's contents up to the archive root (move children to root, then remove the empty marker folder).
+5. Hand off to the pak/lua/json triage as if the archive had been authored without platform variants.
 
 ### Xbox-specific path handling
 
@@ -85,7 +91,7 @@ When the configured platform is `xbox`, script mods (`main.lua`) install to `Bin
 ### Edge cases
 
 - Archive contains only the non-selected variant (e.g. configured `xbox` but archive has only `{STEAM}`): log a warning and use whatever is available, since stripping it would leave nothing. Suggest the user check their platform setting.
-- Archive contains all three markers, or any pair: normal selection logic applies, no warning needed.
+- Archive contains any combination of `{STEAM}` / `{XBOX}` / `{GAMEPASS}` (pair or all three): normal selection logic applies. The `{XBOX}` vs `{GAMEPASS}` precedence rule from §Variant Selection handles the alias collapse silently.
 - Archive contains marker folders **and** mod content at the root level: prefer marker-folder content, log that root-level content is being ignored.
 - If, after variant selection, the tree contains no installable mod content, cancel installation with a log: `Archive contained no usable platform variant — installation canceled.`
 
@@ -103,12 +109,12 @@ def settings(self):
         mobase.PluginSetting("priority", "priority of this installer", 120),
         mobase.PluginSetting(
             "palworld_platform",
-            "platform variant for Palworld (steam | gamepass | xbox)",
+            "platform variant for Palworld (steam | xbox)",
             "steam",
         ),
         mobase.PluginSetting(
             "palworld_server_platform",
-            "platform variant for Palworld Server (steam | gamepass | xbox)",
+            "platform variant for Palworld Server (steam | xbox)",
             "steam",
         ),
     ]
@@ -129,7 +135,15 @@ platform = self._organizer.pluginSetting(self.name(), key)
 
 ### Validation
 
-Accept `"steam"`, `"gamepass"`, and `"xbox"` only (case-insensitive on read, normalized to lowercase). Any other value falls back to `"steam"` and emits a console warning:
+Accept `"steam"` and `"xbox"` only as canonical values (case-insensitive on read, normalized to lowercase).
+
+The legacy value `"gamepass"` is normalized to `"xbox"` and a one-line deprecation warning is logged:
+
+```
+palworld_platform value "gamepass" is deprecated; treating as "xbox" (Game Pass and Xbox share the WinGDK runtime).
+```
+
+Any other value falls back to `"steam"` and emits a console warning:
 
 ```
 Unknown platform setting "<value>" for <game>; falling back to "steam".
@@ -137,7 +151,7 @@ Unknown platform setting "<value>" for <game>; falling back to "steam".
 
 ### Defaults
 
-`steam` for both games. Reasoning: Palworld Server is Steam-only in practice, so the `gamepass` and `xbox` values on the server installer are essentially no-ops but kept for symmetry and to avoid special-casing the absence of the setting.
+`steam` for both games. Reasoning: Palworld Server is Steam-only in practice, so the `xbox` value on the server installer is essentially a no-op but kept for symmetry and to avoid special-casing the absence of the setting.
 
 ### Priority
 
@@ -155,6 +169,6 @@ Unknown platform setting "<value>" for <game>; falling back to "steam".
 These should be resolved before the corresponding code paths are written:
 
 1. Should the platform setting also surface in the `UnifiedUI` install dialog (e.g. as a read-only label or a per-install override dropdown)?
-2. Should the installer warn when it detects only the *non-selected* variant (e.g. configured `steam` but archive has only `{GAMEPASS}`), or silently fall back to whatever is available?
+2. Should the installer warn when it detects only the *non-selected* variant (e.g. configured `steam` but archive has only `{XBOX}`), or silently fall back to whatever is available?
 3. Should reinstall pre-fill UI choices from settings persisted at the previous install? If yes, define the schema (per-mod keys via `setPluginSetting`) and the parse logic. If no, omit the persistence machinery entirely.
-4. Should the platform marker matching tolerate leading/trailing whitespace or alternative bracket styles, or strictly the canonical `{STEAM}` / `{GAMEPASS}` / `{XBOX}` forms?
+4. ~~Should the platform marker matching tolerate leading/trailing whitespace or alternative bracket styles, or strictly the canonical `{STEAM}` / `{GAMEPASS}` / `{XBOX}` forms?~~ **Resolved (M2):** strict canonical braced form only — no whitespace tolerance, no alternate bracket styles. `(STEAM)` / `[STEAM]` are not detected as markers.

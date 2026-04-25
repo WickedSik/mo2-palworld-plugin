@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Context
 
-This is a **Mod Organizer 2 (MO2) plugin suite for Palworld** — the user's own Palworld mod installer, written from scratch as a **clean-room implementation** inspired by AbsolutePhoenix's original Palworld installer. No code is copied from the original; the design is captured independently in `docs/rebuild.md` and is implemented from that spec, including platform-aware behavior (`{STEAM}` / `{GAMEPASS}` / `{XBOX}` variant handling) layered on top of the standard Palworld mod-archive layout rewrite.
+This is a **Mod Organizer 2 (MO2) plugin suite for Palworld** — the user's own Palworld mod installer, written from scratch as a **clean-room implementation** inspired by AbsolutePhoenix's original Palworld installer. No code is copied from the original; the design is captured independently in `docs/rebuild.md` and is implemented from that spec, including platform-aware behavior (`{STEAM}` / `{XBOX}` variant handling, with `{GAMEPASS}` as a deprecated alias of `{XBOX}`) layered on top of the standard Palworld mod-archive layout rewrite.
 
 There is no build system, test suite, or package manifest — these are loose Python files that MO2 loads at runtime by copying them into its `plugins/` directory.
 
@@ -57,9 +57,9 @@ Quirks worth knowing before editing:
 
 Per the design spec at `docs/rebuild.md`, this will be an `IPluginInstallerSimple` that intercepts mod archives during installation and rewrites their file tree into Palworld's expected layout. Key shape (the spec is authoritative; the bullets below are a quick summary):
 
-- **Settings**: `enabled`, `prefer_fomod`, `priority` (default 120), plus per-game `palworld_platform` / `palworld_server_platform` (`steam` | `gamepass` | `xbox`, default `steam`).
+- **Settings**: `enabled`, `prefer_fomod`, `priority` (default 120), plus per-game `palworld_platform` / `palworld_server_platform` (`steam` | `xbox`, default `steam`; legacy value `gamepass` is silently normalized to `xbox` with a deprecation warning).
 - **Triage**: bail out unless managed game is Palworld or Palworld Server; defer to FOMOD when `prefer_fomod` is set and `fomod/moduleconfig.xml` is present; skip archives shipping `ue4ss.dll`; otherwise claim archives containing `.pak` or `main.lua`. Do this in **one** `tree.walk()` pass.
-- **Platform variant selection**: if the archive root contains `{STEAM}` / `{GAMEPASS}` / `{XBOX}` marker folders, keep the configured platform's contents and promote them to root, dropping the others. Detailed edge cases live in `docs/rebuild.md §3`.
+- **Platform variant selection**: if the archive root contains `{STEAM}` / `{XBOX}` marker folders (or the deprecated `{GAMEPASS}` alias), keep the configured platform's contents and promote them to root, dropping the others. When `xbox` is selected and only `{GAMEPASS}` is present, it is used as a fallback with a deprecation warning. Detailed edge cases live in `docs/rebuild.md §3`.
 - **Layout rewrite**: `.pak` to `Content/Paks/{ROOT|~mods|Mods|LogicMods|<custom>}/` (per-file user choice); `main.lua` to `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` when platform is `xbox`); `.json` to `Content/Paks/LogicMods/`; everything else at archive root removed.
 - **UI**: a `QDialog` with editable mod-name combo, a checkbox list of script mods, and a list of pak files with location combo + custom-path line edit.
 
