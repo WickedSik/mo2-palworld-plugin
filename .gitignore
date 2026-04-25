@@ -1,0 +1,23 @@
+# Claude local settings
+.claude/*.local.*
+
+# Python bytecode (MO2 regenerates these inside its embedded Python)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE / editor state
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local environment
+*.local
+.env
+.env.local
