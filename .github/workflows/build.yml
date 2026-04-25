@@ -1,0 +1,40 @@
+# Build a zip of the MO2 plugins directory on every push and pull request,
+# uploading it as a workflow artifact for ad-hoc download and testing.
+# Does not create a GitHub Release — that lives in release.yml.
+
+name: build
+
+on: [pull_request, push]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION="dev-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building zip for version: $VERSION"
+
+      - name: Build zip
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_NAME="PalworldInstaller-${VERSION}.zip"
+          mkdir -p release-artifacts
+          zip -r "release-artifacts/${ZIP_NAME}" plugins/ \
+            -x 'plugins/.DS_Store' \
+               '*/__pycache__/*' \
+               '*/.vs/*' \
+               '*/.DS_Store'
+          echo "Artifact contents:"
+          unzip -l "release-artifacts/${ZIP_NAME}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PalworldInstaller-${{ steps.version.outputs.version }}
+          path: release-artifacts/*.zip

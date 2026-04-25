@@ -1,12 +1,10 @@
-# Build a zip of the MO2 plugins directory and either:
-#   - on tag push (v*): create a GitHub Release with auto-extracted changelog notes
-#   - on workflow_dispatch: upload the zip as a 14-day artifact for ad-hoc dev builds
+# Create a GitHub Release when a version tag is pushed.
+# The release body is extracted from the matching CHANGELOG.md section.
+# Per-push and per-PR builds live in build.yml.
 #
 # Usage:
 #   git tag v0.1.0
 #   git push origin main --tags
-#
-# Or trigger manually from the Actions tab to grab a dev zip without tagging.
 
 name: Release
 
@@ -14,7 +12,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,16 +26,11 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            VERSION="dev-$(git rev-parse --short HEAD)"
-          fi
+          VERSION="${GITHUB_REF_NAME#v}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Building zip for version: $VERSION"
 
       - name: Build zip
-        id: build
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           ZIP_NAME="PalworldInstaller-${VERSION}.zip"
@@ -48,12 +40,10 @@ jobs:
                '*/__pycache__/*' \
                '*/.vs/*' \
                '*/.DS_Store'
-          echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
           echo "Artifact contents:"
           unzip -l "release-artifacts/${ZIP_NAME}"
 
       - name: Extract changelog for this version
-        if: github.event_name == 'push'
         id: changelog
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -78,18 +68,9 @@ jobs:
           echo "$CHANGELOG"
 
       - name: Create Release
-        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.changelog.outputs.content }}
           fail_on_unmatched_files: false
           files: |
             release-artifacts/*.zip
-
-      - name: Upload artifact (manual build)
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: PalworldInstaller-${{ steps.version.outputs.version }}
-          path: release-artifacts/*.zip
-          retention-days: 14
