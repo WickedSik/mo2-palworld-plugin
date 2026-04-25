@@ -1,0 +1,95 @@
+# Build a zip of the MO2 plugins directory and either:
+#   - on tag push (v*): create a GitHub Release with auto-extracted changelog notes
+#   - on workflow_dispatch: upload the zip as a 14-day artifact for ad-hoc dev builds
+#
+# Usage:
+#   git tag v0.1.0
+#   git push origin main --tags
+#
+# Or trigger manually from the Actions tab to grab a dev zip without tagging.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="dev-$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building zip for version: $VERSION"
+
+      - name: Build zip
+        id: build
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_NAME="PalworldInstaller-${VERSION}.zip"
+          mkdir -p release-artifacts
+          zip -r "release-artifacts/${ZIP_NAME}" plugins/ \
+            -x 'plugins/.DS_Store' \
+               '*/__pycache__/*' \
+               '*/.vs/*' \
+               '*/.DS_Store'
+          echo "zip_name=${ZIP_NAME}" >> $GITHUB_OUTPUT
+          echo "Artifact contents:"
+          unzip -l "release-artifacts/${ZIP_NAME}"
+
+      - name: Extract changelog for this version
+        if: github.event_name == 'push'
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Extract section between "## [X.Y.Z]" and the next "## [" header.
+          # Adapted verbatim from pocket-islands' release workflow.
+          CHANGELOG=$(awk -v ver="$VERSION" '
+            BEGIN { found=0; content="" }
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") { found=1; next }
+            }
+            found { content = content $0 "\n" }
+            END { print content }
+          ' CHANGELOG.md)
+
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "Extracted changelog for v$VERSION:"
+          echo "$CHANGELOG"
+
+      - name: Create Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog.outputs.content }}
+          fail_on_unmatched_files: false
+          files: |
+            release-artifacts/*.zip
+
+      - name: Upload artifact (manual build)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PalworldInstaller-${{ steps.version.outputs.version }}
+          path: release-artifacts/*.zip
+          retention-days: 14
