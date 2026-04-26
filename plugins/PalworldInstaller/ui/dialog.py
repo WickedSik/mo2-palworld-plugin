@@ -56,7 +56,13 @@ class UnifiedUI(QDialog):
     Public API (positional alignment with constructor inputs):
       - get_new_mod_name()    -> str
       - get_script_statuses() -> list[str]   ('INSTALL' or 'SKIP')
-      - get_pak_locations()   -> dict[str, str]
+      - get_pak_locations()   -> dict[group_id, str]
+
+    Pak rows are 3-tuples ``(group_id, default_destination, display_label)``.
+    A ``default_destination`` that is one of ``ROOT`` / ``~mods`` /
+    ``LogicMods`` selects the matching combo entry; anything else (a
+    pre-arranged custom path supplied by the SSOT) flips the combo to
+    ``Custom`` and pre-fills the line edit with that string.
     """
 
     def __init__(
@@ -64,7 +70,7 @@ class UnifiedUI(QDialog):
         parent: QWidget | None,
         suggested_name: str,
         script_rows: List[Tuple[str, str, bool]],
-        pak_rows: List[Tuple[str, str]],
+        pak_rows: List[Tuple[str, str, str]],
     ):
         super().__init__(parent)
         self.setWindowTitle("Palworld Mod Installer")
@@ -104,25 +110,31 @@ class UnifiedUI(QDialog):
         if pak_rows:
             pak_group_box = QGroupBox("Pak file groups")
             pak_layout = QVBoxLayout(pak_group_box)
-            for stem, default_dest in pak_rows:
+            for group_id, default_dest, display_label in pak_rows:
                 row_widget = QWidget()
                 row_layout = QHBoxLayout(row_widget)
                 row_layout.setContentsMargins(0, 0, 0, 0)
 
-                row_layout.addWidget(QLabel(f"{stem}.pak"))
+                row_layout.addWidget(QLabel(display_label))
 
                 combo = QComboBox()
                 for opt in _PAK_DEST_OPTIONS:
                     combo.addItem(opt)
-                idx = combo.findText(default_dest)
-                if idx < 0:
-                    idx = combo.findText("~mods")
-                combo.setCurrentIndex(idx)
-                row_layout.addWidget(combo)
 
                 line_edit = QLineEdit()
                 line_edit.setPlaceholderText("custom/path/under/archive/root")
+
+                # Resolve the default: a preset selects the combo entry;
+                # anything else flips to Custom and pre-fills the line edit.
+                preset_idx = combo.findText(default_dest)
+                if preset_idx >= 0:
+                    combo.setCurrentIndex(preset_idx)
+                else:
+                    combo.setCurrentIndex(combo.findText("Custom"))
+                    line_edit.setText(default_dest)
+
                 line_edit.setEnabled(combo.currentText() == "Custom")
+                row_layout.addWidget(combo)
                 row_layout.addWidget(line_edit, 1)
 
                 # Rule 1: ONE SIGNAL, ONE SLOT. The combo's currentTextChanged
@@ -132,7 +144,7 @@ class UnifiedUI(QDialog):
                 )
 
                 pak_layout.addWidget(row_widget)
-                self._pak_rows[stem] = (combo, line_edit)
+                self._pak_rows[group_id] = (combo, line_edit)
             layout.addWidget(pak_group_box)
 
         # --- Buttons -----------------------------------------------------
@@ -156,9 +168,10 @@ class UnifiedUI(QDialog):
 
     def get_pak_locations(self) -> dict[str, str]:
         # Rule 2: SINGLE RESOLUTION PATH. Combo first; if 'Custom', return
-        # line-edit text; else return combo text. No fall-through.
+        # line-edit text; else return combo text. No fall-through. Keys
+        # are group_ids -- the unique pak path supplied at construction.
         out: dict[str, str] = {}
-        for stem, (combo, line_edit) in self._pak_rows.items():
+        for group_id, (combo, line_edit) in self._pak_rows.items():
             value = combo.currentText()
-            out[stem] = line_edit.text() if value == "Custom" else value
+            out[group_id] = line_edit.text() if value == "Custom" else value
         return out
