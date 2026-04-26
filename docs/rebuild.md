@@ -25,37 +25,55 @@ Perform this in a single `tree.walk()` pass — collect all signals once, then e
 
 ### Tree rewriting — `install(name, tree, ...)`
 
-Collect `.pak`, `.json`, and `main.lua` entries from the archive, present a `UnifiedUI` dialog for per-file destination choices, then relocate entries into Palworld's canonical layout:
+Collect `.pak` (and grouped `.utoc` / `.ucas` / sibling JSON-dir companions), `.json`, and `main.lua` entries from the archive. Compute a heuristic destination for each pak group up front, then decide whether the install can proceed silently or requires the `UnifiedUI` dialog (see "Install configuration dialog" below for the predicate). Either way, the final relocation produces Palworld's canonical layout:
 
 | Source pattern | Destination |
 |---|---|
 | `.../<modname>/Scripts/main.lua` | `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` on `xbox`) — full grandparent folder copied |
-| `*.pak` (per-file user choice) | `Content/Paks/{ROOT, ~mods, Mods, LogicMods, <custom>}/` |
-| `*.json` | `Content/Paks/LogicMods/` |
+| `*.pak` group (heuristic default, or per-group user choice when the dialog is shown) | `Content/Paks/{ROOT, ~mods, LogicMods, <custom>}/` |
+| Loose root `*.json` (no parent context) | `Content/Paks/LogicMods/` |
 | Anything else at archive root | Removed (only `Binaries` and `Content` survive at root) |
 
-A `SKIP` status returned by the UI removes the entry entirely.
+A `SKIP` status returned by the UI removes the entire group (the `.pak`, its `.utoc` / `.ucas` companions, and any associated sibling JSON directories), not just the `.pak` file.
 
-The `<modname>` for `main.lua` placement is derived from the script's grandparent directory in the archive (i.e. `<modname>/Scripts/main.lua`). If an archive layout does not match that pattern, fall back to the user-chosen mod name from the dialog rather than crashing.
+The `<modname>` for `main.lua` placement is derived from the script's grandparent directory in the archive (i.e. `<modname>/Scripts/main.lua`). If an archive layout does not match that pattern, fall back to the user-chosen mod name from the dialog (or, in silent mode, to the suggestion in `name: GuessedString`) rather than crashing.
+
+#### File grouping
+
+`.pak` files are grouped with their companions before any placement decision is made:
+
+- `.utoc` and `.ucas` siblings at the archive root sharing the `.pak`'s filename stem belong to the same group.
+- Sibling `AnimJSON/` and `SwapJSON/` directories at the archive root that accompany a `.pak` belong to that group.
+
+A group is the unit of placement. Whether the destination is decided by heuristic or by the user, every member of the group lands at the same target.
 
 ### Install configuration dialog — `UnifiedUI`
 
-A `QDialog` with three sections:
+The dialog is **conditional**, not unconditional. Before constructing it, the installer evaluates a "skip-when-trivial" predicate. The dialog is bypassed and the heuristic destinations are applied directly when **all** of the following hold:
+
+1. Exactly one `.pak` file group is present, and the routing heuristics (see `.claude/tasks/m1-implementation-notes.md`) produce a single unambiguous destination for it.
+2. No `main.lua` script mods are detected, **or** every detected script has an unambiguous `<modname>/Scripts/main.lua` derivation.
+3. No file would otherwise require a `Custom` path.
+
+When the predicate fails on any clause, the dialog is shown **with every control pre-filled from the same routing heuristics** — accepting unchanged produces the same outcome as the silent path. There is a single source of truth for the heuristics; the silent-install code and the dialog default-seeding code consume the same routing function.
+
+When shown, the dialog is a `QDialog` with three sections:
 
 1. **Mod name** — editable combo, suggested variants populated from archive name and any detected mod folder names.
-2. **Script mods** — checkbox list of detected `main.lua` entries; each individually install/skip.
-3. **Pak files** — list of detected `.pak` files with a per-file location combo (`ROOT` / `~mods` / `Mods` / `LogicMods` / `Custom`) and a custom-path line edit that activates only when `Custom` is selected.
+2. **Script mods** — checkbox list of detected `main.lua` entries; each individually install/skip. Default checked when the script's `<modname>` is unambiguous.
+3. **Pak file groups** — one row per `.pak` stem group (not per `.pak` file). Each row has a label (the `.pak` filename for clarity), a per-group location combo (`ROOT` / `~mods` / `LogicMods` / `Custom` / `SKIP`), and a custom-path line edit that activates only when `Custom` is selected. The combo's initial selection is the heuristic destination for the group. The destination chosen routes every member of the group; `SKIP` removes the entire group.
 
 Returns three things to the installer:
 
 - `get_new_mod_name() -> str`
 - `get_script_statuses() -> list[str]` — `"INSTALL"` or `"SKIP"`, positionally aligned with the script mod list
-- `get_pak_locations() -> dict[str, str]` — `{pak_filename: location_or_custom_path}` where the value is one of `ROOT`, `~mods`, `Mods`, `LogicMods`, `SKIP`, or a custom path string
+- `get_pak_locations() -> dict[str, str]` — `{group_stem: location_or_custom_path}` where the key is the shared filename stem of a pak group and the value is one of `ROOT`, `~mods`, `LogicMods`, `SKIP`, or a custom path string
 
 UI implementation rules:
 
 - Each Qt signal connects to **one** slot. Do not double-write state by connecting the same signal to two slots.
 - `get_pak_locations()` must have a single, unambiguous resolution path: read the combo, return the custom path if combo is `Custom` else return the combo value. No fall-through to a default mid-resolution.
+- The routing heuristics used to seed the combos are **the same function** the silent-install path consumes. No parallel default table.
 
 ## 3. Platform-Aware Folder Handling
 
@@ -172,3 +190,4 @@ These should be resolved before the corresponding code paths are written:
 2. Should the installer warn when it detects only the *non-selected* variant (e.g. configured `steam` but archive has only `{XBOX}`), or silently fall back to whatever is available?
 3. Should reinstall pre-fill UI choices from settings persisted at the previous install? If yes, define the schema (per-mod keys via `setPluginSetting`) and the parse logic. If no, omit the persistence machinery entirely.
 4. ~~Should the platform marker matching tolerate leading/trailing whitespace or alternative bracket styles, or strictly the canonical `{STEAM}` / `{GAMEPASS}` / `{XBOX}` forms?~~ **Resolved (M2):** strict canonical braced form only — no whitespace tolerance, no alternate bracket styles. `(STEAM)` / `[STEAM]` are not detected as markers.
+5. When the install proceeds silently (the M3 skip-when-trivial predicate passes — single unambiguous pak group, no ambiguous script mods, no `Custom` paths needed), should the user receive feedback that the install ran without prompting? Options: (a) no surface at all, (b) a single info-level log line, (c) a status-bar message, (d) a toast notification. Default proposal: (b) log line only — keeps the silent path quiet but observable. Raised in response to GitHub issue #3 (which flagged the previous unconditional-dialog assumption).

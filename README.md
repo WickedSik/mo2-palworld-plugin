@@ -10,10 +10,11 @@ A Mod Organizer 2 plugin suite for seamless modding of **Palworld** and **Palwor
 - **Automatic archive triage** — Claims and installs `.pak`, `main.lua`, and `.json` mod files.
 - **Platform-aware variant selection** — Handles `{STEAM}` and `{XBOX}` marker folders in archives, installing the right variant for your platform.
 - **Palworld canonical layout** — Rewrites mod archives into Palworld's expected directory structure.
-- **Interactive install dialog** — Choose mod names, select which script mods to install, and specify `.pak` destination folders.
+- **Smart-routing with optional dialog** — Mods install silently when placement is unambiguous. The dialog appears only when active choices are required, and every option is pre-filled from best-guess routing.
+- **File-group awareness** — `.pak` files travel together with their `.utoc` / `.ucas` companions and sibling `AnimJSON/` / `SwapJSON/` directories as a single unit.
 - **FOMOD deference** — Automatically defers to MO2's FOMOD installer when an archive is a FOMOD package (configurable).
 - **UE4SS bootstrap skip** — Ignores UE4SS bootstrapper files, which are not mod payloads.
-- **Reinstall continuity** — Pre-fills dialog choices from previous installs (per-mod settings).
+- **Reinstall continuity** — Pre-fills dialog choices from previous installs (per-mod settings) when the dialog is shown.
 - **Legacy support** — Recognizes deprecated `{GAMEPASS}` marker folders with clear deprecation warnings.
 
 ## Requirements
@@ -105,33 +106,65 @@ This compatibility layer exists for archives and settings from older installatio
 
 ## Usage
 
-When you install a mod archive for Palworld or Palworld Dedicated Server, the plugin claims it and opens an interactive dialog.
+When you install a mod archive for Palworld or Palworld Dedicated Server, the plugin claims it. What happens next depends on whether the archive's layout is unambiguous: most installs complete silently with smart-routing defaults, and the dialog only appears when there is a real choice to make.
 
-### Install dialog
+### Silent install (no dialog)
+
+The dialog is bypassed when the plugin can place every file with high confidence. This is the common case for well-structured single-pak mods. Concretely, no dialog is shown when **all** of the following hold:
+
+- Exactly one `.pak` file group is present (a `.pak` plus any `.utoc` / `.ucas` companions and sibling JSON folders that share its filename stem), and that group has an unambiguous destination from the routing heuristics below.
+- No `main.lua` script mods are detected, **or** every detected script mod has a single, unambiguous `<modname>/Scripts/main.lua` derivation.
+- No file requires a custom path.
+
+In silent mode the plugin applies the smart-routing heuristics directly and the install proceeds without prompts.
+
+#### Smart-routing heuristics
+
+These heuristics drive both silent installs and the pre-filled defaults shown when the dialog appears:
+
+| Detected pattern | Default destination |
+|---|---|
+| `*_P.pak` (and its file group) | `Content/Paks/~mods/` |
+| `*.pak` with sibling `AnimJSON/` or `SwapJSON/` directories at the archive root | `Content/Paks/~mods/` (the JSON directories travel with the pak) |
+| Bare `*.pak` with no other indicators | `Content/Paks/LogicMods/` |
+| Loose root `*.json` (no parent context) | `Content/Paks/LogicMods/` |
+| `<modname>/Scripts/main.lua` | `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` for Xbox) |
+
+### Interactive install (dialog)
+
+When placement is ambiguous — multiple `.pak` groups with no single obvious destination, multiple script mods to triage, or a mod that benefits from a custom path — the dialog appears with **every option pre-filled from the smart-routing heuristics above**. You only need to override the defaults that don't fit; everything else can be accepted as-is.
 
 The dialog has three sections:
 
 1. **Mod name** — An editable combo box with suggestions drawn from the archive name and detected mod folder names. This name is used for script mods placed in `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` for Xbox).
 
-2. **Script mods** — A checkbox list of detected `main.lua` script files. Tick the checkbox for each script you want to install; uncheck to skip.
+2. **Script mods** — A checkbox list of detected `main.lua` script files. Tick the checkbox for each script you want to install; uncheck to skip. Defaults to checked when the script's `<modname>` derivation is unambiguous.
 
-3. **Pak files** — A list of `.pak` files with a destination chooser for each:
+3. **Pak file groups** — One row per `.pak` file **group** (not per individual file). The row's label shows the `.pak` filename, but the destination you select applies to the whole group: the `.pak` itself, any `.utoc` / `.ucas` companions sharing its filename stem, and any `AnimJSON/` / `SwapJSON/` sibling directories that travel with it. Each row offers:
    - **ROOT** — `Content/Paks/ROOT/`
    - **~mods** — `Content/Paks/~mods/`
-   - **Mods** — `Content/Paks/Mods/`
    - **LogicMods** — `Content/Paks/LogicMods/`
    - **Custom** — A custom path (enter in the text field below the combo)
-   - **SKIP** — Do not install this `.pak` file
+   - **SKIP** — Do not install this group
 
-Choose the destination appropriate to the mod. Select **Custom** to type a custom path; it becomes active only when the combo is set to **Custom**.
+Choose the destination appropriate to the mod. Select **Custom** to type a custom path; it becomes active only when the combo is set to **Custom**. **SKIP** removes the entire group, not just the `.pak`.
+
+### File grouping
+
+`.pak` files in Palworld archives often ship with companions that must travel with them or the mod will not load:
+
+- **`.utoc` and `.ucas` companions** — Sibling files at the archive root sharing the filename stem of a `.pak` (e.g. `mymod.pak` + `mymod.utoc` + `mymod.ucas`) are grouped with that `.pak`.
+- **`AnimJSON/` and `SwapJSON/` sibling directories** — Root-level JSON directories that accompany a `.pak` are grouped with it and routed to the same destination.
+
+The plugin treats these as a single unit. Whether the install runs silently or via the dialog, you choose one destination for the whole group; companions follow the `.pak` automatically.
 
 ### Archive layout support
 
 The plugin claims archives containing:
 
-- `.pak` files — Unreal Engine mod packages.
+- `.pak` files — Unreal Engine mod packages (with their `.utoc` / `.ucas` / sibling JSON companions).
 - `main.lua` — Lua script mods (expected in a `<modname>/Scripts/main.lua` structure).
-- `.json` — Configuration files (installed to `Content/Paks/LogicMods/`).
+- `.json` — Configuration files (installed to `Content/Paks/LogicMods/` when loose at the root).
 
 Archives that also contain platform markers (`{STEAM}`, `{XBOX}`, or the legacy `{GAMEPASS}`) have the non-selected variant removed and the selected one promoted to the root, transparent to the dialog.
 
@@ -141,10 +174,12 @@ Archives containing `ue4ss.dll` are skipped (this is a UE4SS bootstrapper, not a
 
 | File type | Destination |
 |-----------|-------------|
-| `*.pak` | `Content/Paks/{chosen_destination}/` |
+| `*.pak` (and grouped `.utoc` / `.ucas` companions, sibling `AnimJSON/` / `SwapJSON/` directories) | `Content/Paks/{chosen_or_default_destination}/` |
 | `<modname>/Scripts/main.lua` | `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` if Xbox platform) |
-| `*.json` | `Content/Paks/LogicMods/` |
+| Loose root `*.json` (no parent context) | `Content/Paks/LogicMods/` |
 | Anything else at archive root | Removed |
+
+The destination column shows where each file group lands. When the install is silent, the destination comes from the smart-routing heuristics above; when the dialog is shown, it comes from your selection (defaulting to the heuristic).
 
 ## Troubleshooting
 
