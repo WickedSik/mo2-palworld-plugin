@@ -85,7 +85,7 @@ During `install()`, before any pak/lua/json triage runs, scan the archive's top-
 - `{XBOX}`
 - `{GAMEPASS}` — deprecated alias of `{XBOX}`; recognised for compatibility with legacy archives
 
-Match is case-insensitive against the canonical braced form. Anything else (e.g. `STEAM` without braces, `[STEAM]`, `(STEAM)`) is **not** treated as a marker — these are the expected names that real archives ship with.
+Match is case-insensitive and intentionally permissive on form: bare `steam` / `xbox` / `gamepass`, or wrapped in matching `{}` / `[]` / `()` (e.g. `(STEAM)`, `[Xbox]`, `{gamepass}`) all resolve. Real archives in the wild ship in all of these forms, so the detection accepts all of them rather than rejecting valid mods on bracket style alone.
 
 If none of the markers are present, skip platform branching entirely.
 
@@ -108,10 +108,11 @@ When the configured platform is `xbox`, script mods (`main.lua`) install to `Bin
 
 ### Edge cases
 
-- Archive contains only the non-selected variant (e.g. configured `xbox` but archive has only `{STEAM}`): log a warning and use whatever is available, since stripping it would leave nothing. Suggest the user check their platform setting.
-- Archive contains any combination of `{STEAM}` / `{XBOX}` / `{GAMEPASS}` (pair or all three): normal selection logic applies. The `{XBOX}` vs `{GAMEPASS}` precedence rule from §Variant Selection handles the alias collapse silently.
-- Archive contains marker folders **and** mod content at the root level: prefer marker-folder content, log that root-level content is being ignored.
-- If, after variant selection, the tree contains no installable mod content, cancel installation with a log: `Archive contained no usable platform variant — installation canceled.`
+- Archive contains only the non-selected variant (e.g. configured `xbox` but archive has only `{STEAM}`): the install fails with `InstallResult.FAILED` and an error log of the form `Automatic installation failed: archive contains only {available variants} but configured platform is {configured}. Manual installation may still be possible.` This is intentional — silently installing the wrong variant masks a real configuration / archive mismatch.
+- Archive contains **no** marker folders at all: skip platform branching entirely and proceed with normal triage. Markerless archives are treated as platform-agnostic (the most common case for community paks).
+- Archive contains any combination of `{STEAM}` / `{XBOX}` / `{GAMEPASS}` (pair or all three) and at least one matches the configured platform: normal selection logic applies. The `{XBOX}` vs `{GAMEPASS}` precedence rule from §Variant Selection handles the alias collapse silently.
+- Archive contains marker folders **and** mod content at the root level: prefer marker-folder content. Root-level entries that would have matched M1 triage (`.pak`, `main.lua`, `.json`) are removed before the matching marker is lifted, and their paths are logged at warning level.
+- If, after variant selection, the tree contains no installable mod content (the matching marker existed but was empty or contained no `.pak` / `main.lua`), the install fails with `InstallResult.FAILED` and the same "Automatic installation failed... Manual installation may still be possible." error template.
 
 ## 4. Plugin Settings
 
@@ -180,14 +181,14 @@ Unknown platform setting "<value>" for <game>; falling back to "steam".
 - **FOMOD takeover** — when `prefer_fomod` is set and the archive is a FOMOD package, the FOMOD installer wins. No FOMOD parsing is implemented here.
 - **UE4SS handling** beyond the skip in triage. Bootstrappers are not mod payloads and are not installed by this plugin.
 - **Per-mod platform override** — the platform setting is global per managed game. A single archive cannot mix platforms.
-- **Reinstall pre-fill** of UI choices — see §6, open question 3. Until decided, the UI starts from defaults on every install.
+- **Reinstall pre-fill** of UI choices — resolved as "no" (§6 Q3). The UI starts from defaults on every install, including reinstalls. No per-mod settings are persisted by this plugin.
 
 ## 6. Open Questions
 
 These should be resolved before the corresponding code paths are written:
 
 1. Should the platform setting also surface in the `UnifiedUI` install dialog (e.g. as a read-only label or a per-install override dropdown)?
-2. Should the installer warn when it detects only the *non-selected* variant (e.g. configured `steam` but archive has only `{XBOX}`), or silently fall back to whatever is available?
-3. Should reinstall pre-fill UI choices from settings persisted at the previous install? If yes, define the schema (per-mod keys via `setPluginSetting`) and the parse logic. If no, omit the persistence machinery entirely.
-4. ~~Should the platform marker matching tolerate leading/trailing whitespace or alternative bracket styles, or strictly the canonical `{STEAM}` / `{GAMEPASS}` / `{XBOX}` forms?~~ **Resolved (M2):** strict canonical braced form only — no whitespace tolerance, no alternate bracket styles. `(STEAM)` / `[STEAM]` are not detected as markers.
+2. ~~Should the installer warn when it detects only the *non-selected* variant (e.g. configured `steam` but archive has only `{XBOX}`), or silently fall back to whatever is available?~~ **Resolved (2026-04-26):** neither — fail the install with `InstallResult.FAILED` and an error message suggesting manual installation. Markerless archives still proceed normally; only the "markers exist but none match" case fails.
+3. ~~Should reinstall pre-fill UI choices from settings persisted at the previous install? If yes, define the schema (per-mod keys via `setPluginSetting`) and the parse logic. If no, omit the persistence machinery entirely.~~ **Resolved:** no pre-fill. The persistence machinery is omitted entirely; reinstalls re-open the dialog with M3 defaults. M4 was deleted from the plan.
+4. ~~Should the platform marker matching tolerate leading/trailing whitespace or alternative bracket styles, or strictly the canonical `{STEAM}` / `{GAMEPASS}` / `{XBOX}` forms?~~ **Resolved (2026-04-26):** intentionally permissive. Bare names (`steam`, `xbox`, `gamepass`) and matching `{}` / `[]` / `()` brackets are all accepted, case-insensitive. Real archives in the wild use all these styles; rejecting them would silently misroute valid mods.
 5. When the install proceeds silently (the M3 skip-when-trivial predicate passes — single unambiguous pak group, no ambiguous script mods, no `Custom` paths needed), should the user receive feedback that the install ran without prompting? Options: (a) no surface at all, (b) a single info-level log line, (c) a status-bar message, (d) a toast notification. Default proposal: (b) log line only — keeps the silent path quiet but observable. Raised in response to GitHub issue #3 (which flagged the previous unconditional-dialog assumption).

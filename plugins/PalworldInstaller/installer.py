@@ -53,6 +53,28 @@ _ANIM_SWAP_FOLDERS = ("animjson", "swapjson")
 _PAK_COMPANION_SUFFIXES = ("pak", "utoc", "ucas")
 _PRESET_PAK_DESTINATIONS = ("ROOT", "~mods", "LogicMods")
 
+# Suffixes that M1 triage treats as mod content. Used by M5 root-content
+# stripping when marker folders and loose root-level mod files coexist.
+_M1_TRIAGE_SUFFIXES = frozenset({"pak", "utoc", "ucas", "lua", "json"})
+
+
+class PlatformVariantMismatch(Exception):
+    """Raised by `_apply_platform_variant` when an archive contains
+    platform marker folders but none match the configured platform.
+
+    The install must abort with `InstallResult.FAILED` before any
+    destructive tree mutation occurs (so that "manual installation"
+    remains a real option for the user).
+    """
+
+    def __init__(self, available: list[str], configured: str) -> None:
+        self.available = available
+        self.configured = configured
+        super().__init__(
+            f"archive contains only {sorted(set(available))} "
+            f"but configured platform is {configured}"
+        )
+
 
 @dataclass
 class PakGroup:
@@ -269,6 +291,14 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 lambda e: e.parent() is tree
                 and e.name().lower() not in allowed_root
             )
+        except PlatformVariantMismatch as exc:
+            log.error(
+                f"PalworldInstaller: Automatic installation failed: "
+                f"archive contains only {sorted(set(exc.available))} but "
+                f"configured platform is {exc.configured} for {str(name)}. "
+                f"Manual installation may still be possible."
+            )
+            return mobase.InstallResult.FAILED
         except Exception:
             log.exception(f"PalworldInstaller: tree rewrite failed for {str(name)}")
             return mobase.InstallResult.FAILED
@@ -278,8 +308,10 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         if not (has_pak or has_lua):
             if had_markers:
                 log.error(
-                    f"PalworldInstaller: variant selection left no installable "
-                    f"content for {str(name)} on platform {platform}; failing."
+                    f"PalworldInstaller: Automatic installation failed: "
+                    f"matching platform variant for {platform} contained "
+                    f"no installable content for {str(name)}. Manual "
+                    f"installation may still be possible."
                 )
                 return mobase.InstallResult.FAILED
             log.warning(
@@ -302,8 +334,9 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
 
         if value == "gamepass":
             log.warning(
-                f'{key} value "gamepass" is deprecated; treating as "xbox" '
-                f"(Game Pass and Xbox share the WinGDK runtime)."
+                f'PalworldInstaller: {key} value "gamepass" is deprecated; '
+                f'treating as "xbox" (Game Pass and Xbox share the WinGDK '
+                f'runtime).'
             )
             return "xbox"
 
@@ -311,8 +344,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             return value
 
         log.warning(
-            f'Unknown platform setting "{value}" for {game_name}; '
-            f'falling back to "steam".'
+            f'PalworldInstaller: unknown platform setting "{value}" for '
+            f'{game_name}; falling back to "steam".'
         )
         return "steam"
 
@@ -328,22 +361,44 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             return False
 
         matching = self._select_matching_marker(markers, platform)
+        if matching is None:
+            available = [_extract_marker_platform(e.name()) for e in markers]
+            raise PlatformVariantMismatch(available, platform)
+
+        # Marker-folder content wins: drop root-level loose mod files that
+        # would otherwise be merged with the lifted marker children
+        # (docs/rebuild.md §3 edge cases).
+        self._strip_root_mod_content(tree)
 
         for entry in markers:
             if entry is matching:
                 continue
             tree.remove(entry)
 
-        if matching is not None:
-            for child in list(matching):
-                tree.move(
-                    child,
-                    child.name(),
-                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
-                )
-            tree.remove(matching)
+        for child in list(matching):
+            tree.move(
+                child,
+                child.name(),
+                policy=mobase.IFileTree.InsertPolicy.REPLACE,
+            )
+        tree.remove(matching)
 
         return True
+
+    def _strip_root_mod_content(self, tree: mobase.IFileTree) -> None:
+        dropped: list[str] = []
+        for entry in list(tree):
+            if not entry.isFile():
+                continue
+            if entry.suffix().lower() in _M1_TRIAGE_SUFFIXES:
+                dropped.append(entry.name())
+                tree.remove(entry)
+        if dropped:
+            log.warning(
+                f"PalworldInstaller: marker folders coexist with "
+                f"root-level mod content; dropped root-level files in "
+                f"favour of marker contents: {sorted(dropped)}"
+            )
 
     def _select_matching_marker(
         self,
@@ -365,8 +420,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             if xbox is not None:
                 return xbox
             log.warning(
-                "Archive uses deprecated GAMEPASS marker; "
-                "treat as XBOX going forward."
+                "PalworldInstaller: archive uses deprecated GAMEPASS "
+                "marker; treat as XBOX going forward."
             )
             return same_platform[0]
 
