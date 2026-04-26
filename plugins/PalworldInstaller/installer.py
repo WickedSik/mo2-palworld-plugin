@@ -270,7 +270,9 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             force_dialog = bool(
                 self._organizer.pluginSetting(self.name(), "force_dialog")
             )
-            if force_dialog or self._should_show_dialog(groups, scripts):
+            if force_dialog or self._should_show_dialog(
+                groups, default_routing, scripts
+            ):
                 pak_rows = [
                     (
                         g.group_id,
@@ -945,18 +947,39 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
     def _should_show_dialog(
         self,
         groups: list[PakGroup],
+        decisions: dict[str, str],
         scripts: list[ScriptMod],
     ) -> bool:
-        """Skip-when-trivial predicate (AC §6).
+        """Skip-when-trivial predicate (AC §6 / docs/rebuild.md §"Install
+        configuration dialog").
 
-        Show the dialog when more than one pak group is present, or when
-        any detected script's <modname> derivation is ambiguous. Otherwise
-        the silent-install path applies the M1 heuristics directly.
+        Show the dialog when any of the following hold:
+
+        1. More than one pak group is present.
+        2. Any detected script's ``<modname>`` derivation is ambiguous.
+        3. Any pak group's heuristic destination is a Custom path -- i.e.
+           the routing SSOT returned a value outside the preset set
+           (``ROOT`` / ``~mods`` / ``LogicMods``) and not ``SKIP``. The
+           user must confirm Custom destinations even when the rest of
+           the archive is otherwise trivial; ``UnifiedUI`` pre-fills the
+           Custom line edit with the layout-derived path so accepting
+           unchanged matches what the silent path would have done.
+
+        Otherwise the silent-install path applies the M1 heuristics
+        directly.
         """
         if len(groups) > 1:
             return True
         if any(s.ambiguous for s in scripts):
             return True
+        for g in groups:
+            decision = decisions.get(g.group_id)
+            if (
+                decision is not None
+                and decision != "SKIP"
+                and decision not in PAK_PRESETS
+            ):
+                return True
         return False
 
     def _compute_allowed_root_names(
