@@ -52,23 +52,27 @@ Copy the entire `PalworldInstaller` folder into MO2's plugins directory:
 ```
 plugins/PalworldInstaller/
 ├── __init__.py
-└── installer.py
+├── installer.py
+└── ui/
+    ├── __init__.py
+    └── dialog.py
 ```
 
 **To install:**
 
 1. Locate your MO2 installation directory.
 2. Copy the entire `plugins/PalworldInstaller/` folder to `<MO2 install>/plugins/`.
-3. The result should be `<MO2 install>/plugins/PalworldInstaller/__init__.py` and `installer.py`.
+3. The result should be `<MO2 install>/plugins/PalworldInstaller/` containing `__init__.py`, `installer.py`, and the `ui/` subpackage with `__init__.py` and `dialog.py`.
 4. Restart MO2.
 
-**Verify:** In MO2, go to Settings → Plugins. You should see "PalworldInstaller" listed with five settings:
+**Verify:** In MO2, go to Settings → Plugins. You should see "PalworldInstaller" listed with six settings:
 
 - `enabled` (checkbox)
 - `prefer_fomod` (checkbox)
 - `priority` (number)
 - `palworld_platform` (dropdown)
 - `palworld_server_platform` (dropdown)
+- `force_dialog` (checkbox, debug)
 
 ### Step 3 — Configure platform settings
 
@@ -93,6 +97,7 @@ If you only manage one game, configure the relevant setting and leave the other 
 | `priority` | Integer | `120` | Installer priority. Higher values run first. This default ensures PalworldInstaller wins for Palworld archives but allows FOMOD to take precedence when enabled. |
 | `palworld_platform` | String | `steam` | Platform variant for Palworld (client): `steam` or `xbox`. |
 | `palworld_server_platform` | String | `steam` | Platform variant for Palworld Dedicated Server: `steam` or `xbox`. |
+| `force_dialog` | Boolean | `False` | **Debug only.** Always show the install dialog, even when the silent-install predicate would bypass it. Useful for verifying smart-routing defaults before committing to an install. |
 
 ### Legacy platform values
 
