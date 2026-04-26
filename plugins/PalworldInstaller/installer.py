@@ -8,6 +8,7 @@ import mobase
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QDialog, QWidget
 
+from .presets import PAK_PRESETS
 from .ui.dialog import UnifiedUI
 
 
@@ -25,6 +26,20 @@ _PLATFORM_BY_MARKER_NAME = {
 _MARKER_BRACKET_PAIRS = {"[": "]", "{": "}", "(": ")"}
 
 
+def _normalize_marker_inner(name: str) -> str:
+    """Return the bracket-stripped, lowercased inner of a marker folder
+    name. Shared by `_extract_marker_platform` and `_is_xbox_marker` so
+    bracket/case rules live in exactly one place."""
+    inner = name.strip().lower()
+    if (
+        len(inner) >= 2
+        and inner[0] in _MARKER_BRACKET_PAIRS
+        and inner[-1] == _MARKER_BRACKET_PAIRS[inner[0]]
+    ):
+        inner = inner[1:-1]
+    return inner
+
+
 def _extract_marker_platform(name: str) -> str | None:
     """Return the canonical platform name (`steam`/`xbox`) if `name` is a
     platform marker, else ``None``.
@@ -33,14 +48,16 @@ def _extract_marker_platform(name: str) -> str | None:
     or wrapped in matching `[]` / `{}` / `()` -- `(STEAM)`, `[Xbox]`,
     `{gamepass}` all resolve.
     """
-    inner = name.strip().lower()
-    if (
-        len(inner) >= 2
-        and inner[0] in _MARKER_BRACKET_PAIRS
-        and inner[-1] == _MARKER_BRACKET_PAIRS[inner[0]]
-    ):
-        inner = inner[1:-1]
-    return _PLATFORM_BY_MARKER_NAME.get(inner)
+    return _PLATFORM_BY_MARKER_NAME.get(_normalize_marker_inner(name))
+
+
+def _suffix(entry: mobase.FileTreeEntry) -> str:
+    """Lower-case file suffix. mobase preserves the on-disk case in
+    `entry.suffix()`; archives in the wild use mixed case (`.PAK`,
+    `.Pak`). Normalising at every comparison site keeps detection
+    consistent across discovery, triage, and validation passes."""
+    return entry.suffix().lower()
+
 
 _GAME_PLATFORM_KEYS = {
     "Palworld": "palworld_platform",
@@ -51,7 +68,6 @@ _VALID_PLATFORMS = ("steam", "xbox")
 _WRAPPER_FOLDERS = ("palworld", "pal")
 _ANIM_SWAP_FOLDERS = ("animjson", "swapjson")
 _PAK_COMPANION_SUFFIXES = ("pak", "utoc", "ucas")
-_PRESET_PAK_DESTINATIONS = ("ROOT", "~mods", "LogicMods")
 
 # Suffixes that M1 triage treats as mod content. Used by M5 root-content
 # stripping when marker folders and loose root-level mod files coexist.
@@ -212,7 +228,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     flags["fomod"] = True
                 elif lower == "ue4ss.dll":
                     flags["ue4ss"] = True
-                elif entry.suffix() == "pak":
+                elif _suffix(entry) == "pak":
                     flags["pak"] = True
                 elif lower == "main.lua":
                     flags["lua"] = True
@@ -284,7 +300,13 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             self._apply_pak_routing(
                 tree, groups, pak_decisions, json_dirs, loose_jsons
             )
-            self._relocate_scripts(tree, platform)
+            # `name` reflects either the user's dialog choice (after
+            # `name.update(...)` above) or the original suggestion on the
+            # silent path -- exactly the fallback the spec requires for
+            # scripts that lack a usable archive-side <modname>.
+            self._relocate_scripts(
+                tree, platform, scripts, script_statuses, str(name)
+            )
 
             allowed_root = self._compute_allowed_root_names(groups, pak_decisions)
             tree.removeIf(
@@ -303,8 +325,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             log.exception(f"PalworldInstaller: tree rewrite failed for {str(name)}")
             return mobase.InstallResult.FAILED
 
-        has_pak = self._tree_has_pak(tree)
-        has_lua = self._tree_has_lua(tree)
+        has_pak, has_lua = self._tree_post_install_state(tree)
         if not (has_pak or has_lua):
             if had_markers:
                 log.error(
@@ -390,7 +411,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         for entry in list(tree):
             if not entry.isFile():
                 continue
-            if entry.suffix().lower() in _M1_TRIAGE_SUFFIXES:
+            if _suffix(entry) in _M1_TRIAGE_SUFFIXES:
                 dropped.append(entry.name())
                 tree.remove(entry)
         if dropped:
@@ -432,14 +453,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         """True iff `name` is the canonical xbox marker (not the
         deprecated gamepass alias). Used to prefer xbox over gamepass
         when both are present in the archive."""
-        inner = name.strip().lower()
-        if (
-            len(inner) >= 2
-            and inner[0] in _MARKER_BRACKET_PAIRS
-            and inner[-1] == _MARKER_BRACKET_PAIRS[inner[0]]
-        ):
-            inner = inner[1:-1]
-        return inner == "xbox"
+        return _normalize_marker_inner(name) == "xbox"
 
     # --- M3: script discovery -------------------------------------------
     def _discover_script_mods(self, tree: mobase.IFileTree) -> list[ScriptMod]:
@@ -538,37 +552,96 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         for entry in to_remove:
             tree.remove(entry)
 
-    def _relocate_scripts(self, tree: mobase.IFileTree, platform: str) -> None:
-        targets: list[mobase.FileTreeEntry] = []
+    def _relocate_scripts(
+        self,
+        tree: mobase.IFileTree,
+        platform: str,
+        scripts: list[ScriptMod],
+        statuses: list[str],
+        archive_mod_name: str,
+    ) -> None:
+        """Move every INSTALL'd script under
+        ``Binaries/{Win64|WinGDK}/Mods/<modname>/Scripts/main.lua``.
 
-        def visit(_path: str, entry: mobase.FileTreeEntry) -> mobase.IFileTree.WalkReturn:
-            if not (entry.isFile() and entry.name().lower() == "main.lua"):
-                return mobase.IFileTree.WalkReturn.CONTINUE
-            scripts_dir = entry.parent()
-            if scripts_dir is None or scripts_dir is tree:
-                return mobase.IFileTree.WalkReturn.CONTINUE
-            if scripts_dir.name().lower() != "scripts":
-                return mobase.IFileTree.WalkReturn.CONTINUE
-            mod_dir = scripts_dir.parent()
-            if mod_dir is None or mod_dir is tree:
-                return mobase.IFileTree.WalkReturn.CONTINUE
-            if mod_dir not in targets:
-                targets.append(mod_dir)
-            return mobase.IFileTree.WalkReturn.CONTINUE
+        The destination ``<modname>`` is the script's own ``derived_name``
+        (the mod author's chosen directory) when meaningful; for
+        scripts with no usable derivation -- bare ``main.lua`` at archive
+        root, or a ``Scripts/`` folder directly at root with no parent
+        modname -- we fall back to ``archive_mod_name`` (the user-chosen
+        mod name from the dialog, or the suggestion in
+        ``name: GuessedString`` on the silent path).
 
-        tree.walk(visit)
+        Source layouts handled:
 
-        if not targets:
-            return
+        * ``<modname>/Scripts/main.lua``        -> move whole ``<modname>``.
+        * ``Scripts/main.lua`` at archive root  -> move ``Scripts`` under
+          ``<archive_mod_name>``.
+        * ``<somedir>/main.lua`` (no Scripts/)  -> create
+          ``<derived_name>/Scripts`` and move just ``main.lua``.
+        * Bare ``main.lua`` at archive root     -> create
+          ``<archive_mod_name>/Scripts`` and move just ``main.lua``.
+        """
+        base = (
+            "Binaries/WinGDK/Mods" if platform == "xbox"
+            else "Binaries/Win64/Mods"
+        )
 
-        base = "Binaries/WinGDK/Mods" if platform == "xbox" else "Binaries/Win64/Mods"
-        dest = tree.addDirectory(base)
-        for mod_dir in targets:
-            tree.move(
-                mod_dir,
-                f"{dest.path('/')}/{mod_dir.name()}",
-                policy=mobase.IFileTree.InsertPolicy.REPLACE,
+        for script, status in zip(scripts, statuses):
+            if status != "INSTALL":
+                continue
+
+            # Pick a sensible <modname>: derivations like "(root)" /
+            # "Scripts" don't name a real mod, fall back to archive name.
+            if (
+                script.mod_dir is tree
+                or script.derived_name in ("(root)", "Scripts")
+            ):
+                target_modname = archive_mod_name
+            else:
+                target_modname = script.derived_name
+
+            scripts_parent = script.main_lua.parent()
+            has_real_scripts_parent = (
+                scripts_parent is not None
+                and scripts_parent is not tree
+                and scripts_parent.name().lower() == "scripts"
             )
+
+            if (
+                has_real_scripts_parent
+                and script.mod_dir is not tree
+                and scripts_parent is not script.mod_dir
+            ):
+                # <modname>/Scripts/main.lua: move the whole modname dir,
+                # preserving its Scripts/ substructure.
+                tree.move(
+                    script.mod_dir,
+                    f"{base}/{target_modname}",
+                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
+                )
+            elif (
+                has_real_scripts_parent
+                and scripts_parent is script.mod_dir
+            ):
+                # Scripts/main.lua at archive root: mod_dir IS the Scripts
+                # folder; nest it under <archive_mod_name>.
+                tree.move(
+                    script.mod_dir,
+                    f"{base}/{target_modname}/Scripts",
+                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
+                )
+            else:
+                # No Scripts/ folder anywhere on the path: synthesize the
+                # canonical <modname>/Scripts/ structure and move only the
+                # main.lua entry.
+                target_scripts = tree.addDirectory(
+                    f"{base}/{target_modname}/Scripts"
+                )
+                tree.move(
+                    script.main_lua,
+                    f"{target_scripts.path('/')}/main.lua",
+                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
+                )
 
     def _promote_prearranged_layout(self, tree: mobase.IFileTree) -> None:
         """Lift root-level pre-arranged destination dirs into the standard
@@ -658,7 +731,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             parent = entry.parent()
             at_root = parent is None or parent is tree
             if entry.isFile():
-                suffix = entry.suffix()
+                suffix = _suffix(entry)
                 if suffix in _PAK_COMPANION_SUFFIXES:
                     stem = entry.name()[: -(len(suffix) + 1)]
                     parent_key = id(parent) if parent is not None else id(tree)
@@ -677,7 +750,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
 
         groups: list[PakGroup] = []
         for (_parent_key, stem), entries in bucketed.items():
-            pak = next((e for e in entries if e.suffix() == "pak"), None)
+            pak = next((e for e in entries if _suffix(e) == "pak"), None)
             if pak is None:
                 # Orphaned .utoc / .ucas without a .pak -- skip; the
                 # cleanup pass disposes of them.
@@ -852,7 +925,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         ]
         if len(surviving) == 1:
             decision = decisions.get(surviving[0].group_id, "LogicMods")
-            if decision not in _PRESET_PAK_DESTINATIONS and decision != "SKIP":
+            if decision not in PAK_PRESETS and decision != "SKIP":
                 resolved = self._resolve_pak_dest_path(decision)
                 if resolved:
                     target_dest_path = resolved
@@ -907,7 +980,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 for c in g.companions:
                     allowed.add(c.name().lower())
                 continue
-            if decision in _PRESET_PAK_DESTINATIONS:
+            if decision in PAK_PRESETS:
                 continue
             normalised = decision.replace("\\", "/").lstrip("/")
             if not normalised:
@@ -937,29 +1010,28 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             f"passed): {summary}"
         )
 
-    def _tree_has_pak(self, tree: mobase.IFileTree) -> bool:
-        found = {"pak": False}
+    def _tree_post_install_state(
+        self, tree: mobase.IFileTree
+    ) -> tuple[bool, bool]:
+        """Single-walk validation: returns (has_pak, has_lua). Used to
+        decide whether the rewrite produced any installable content; stops
+        as soon as both have been seen."""
+        found = {"pak": False, "lua": False}
 
-        def visit(_path: str, entry: mobase.FileTreeEntry) -> mobase.IFileTree.WalkReturn:
-            if entry.isFile() and entry.suffix() == "pak":
-                found["pak"] = True
-                return mobase.IFileTree.WalkReturn.STOP
+        def visit(
+            _path: str, entry: mobase.FileTreeEntry
+        ) -> mobase.IFileTree.WalkReturn:
+            if entry.isFile():
+                if not found["pak"] and _suffix(entry) == "pak":
+                    found["pak"] = True
+                elif not found["lua"] and entry.name().lower() == "main.lua":
+                    found["lua"] = True
+                if found["pak"] and found["lua"]:
+                    return mobase.IFileTree.WalkReturn.STOP
             return mobase.IFileTree.WalkReturn.CONTINUE
 
         tree.walk(visit)
-        return found["pak"]
-
-    def _tree_has_lua(self, tree: mobase.IFileTree) -> bool:
-        found = {"lua": False}
-
-        def visit(_path: str, entry: mobase.FileTreeEntry) -> mobase.IFileTree.WalkReturn:
-            if entry.isFile() and entry.name().lower() == "main.lua":
-                found["lua"] = True
-                return mobase.IFileTree.WalkReturn.STOP
-            return mobase.IFileTree.WalkReturn.CONTINUE
-
-        tree.walk(visit)
-        return found["lua"]
+        return found["pak"], found["lua"]
 
     # --- helper ----------------------------------------------------------
     def _tr(self, txt: str) -> str:

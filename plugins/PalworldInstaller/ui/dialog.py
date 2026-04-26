@@ -37,8 +37,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-
-_PAK_DEST_OPTIONS = ("ROOT", "~mods", "LogicMods", "Custom", "SKIP")
+from ..presets import PAK_DEST_OPTIONS
 
 
 class UnifiedUI(QDialog):
@@ -118,7 +117,7 @@ class UnifiedUI(QDialog):
                 row_layout.addWidget(QLabel(display_label))
 
                 combo = QComboBox()
-                for opt in _PAK_DEST_OPTIONS:
+                for opt in PAK_DEST_OPTIONS:
                     combo.addItem(opt)
 
                 line_edit = QLineEdit()
