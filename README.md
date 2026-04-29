@@ -214,7 +214,7 @@ The destination column shows where each file group lands. When the install is si
 
 ## Credits
 
-This plugin is a clean-room implementation inspired by **AbsolutePhoenix**'s original [MO2 Palworld installer](https://www.nexusmods.com/palworld/mods/769). While no code is shared between the two projects, AbsolutePhoenix's work demonstrated the value of a Palworld-aware installer for MO2 and informed the behaviors this plugin reproduces. Credit and thanks to AbsolutePhoenix for paving the way.
+This plugin is a clean-room implementation inspired by **AbsolutePhoenyx**'s original [MO2 Palworld installer](https://www.nexusmods.com/palworld/mods/769). While no code is shared between the two projects, AbsolutePhoenyx's work demonstrated the value of a Palworld-aware installer for MO2 and informed the behaviors this plugin reproduces. Credit and thanks to AbsolutePhoenyx for paving the way.
 
 ## License
 

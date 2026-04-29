@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Context
 
-This is a **Mod Organizer 2 (MO2) plugin suite for Palworld** — the user's own Palworld mod installer, written from scratch as a **clean-room implementation** inspired by AbsolutePhoenix's original Palworld installer. No code is copied from the original; the design is captured independently in `docs/rebuild.md` and is implemented from that spec, including platform-aware behavior (`{STEAM}` / `{XBOX}` variant handling, with `{GAMEPASS}` as a deprecated alias of `{XBOX}`) layered on top of the standard Palworld mod-archive layout rewrite.
+This is a **Mod Organizer 2 (MO2) plugin suite for Palworld** — the user's own Palworld mod installer, written from scratch as a **clean-room implementation** inspired by AbsolutePhoenyx's original Palworld installer. No code is copied from the original; the design is captured independently in `docs/rebuild.md` and is implemented from that spec, including platform-aware behavior (`{STEAM}` / `{XBOX}` variant handling, with `{GAMEPASS}` as a deprecated alias of `{XBOX}`) layered on top of the standard Palworld mod-archive layout rewrite.
 
 There is no build system, test suite, or package manifest — these are loose Python files that MO2 loads at runtime by copying them into its `plugins/` directory.
 
@@ -71,4 +71,4 @@ Per the design spec at `docs/rebuild.md`, this will be an `IPluginInstallerSimpl
 - **Editing scope so far**: the only code in the repo lives under `plugins/basic_games/games/`. Any installer work will create new files under `plugins/PalworldInstaller/`; before doing so, confirm the design with the user against `docs/rebuild.md`.
 - **Safe to ignore**: `__pycache__/`, `.vs/`, `.DS_Store`. None of these are checked in.
 - **mobase API surface anticipated**: `IPluginInstallerSimple`, `IFileTree` (`walk`, `find`, `addDirectory`, `insert`, `remove`, `InsertPolicy.REPLACE`), `ModDataChecker`, `GuessedString.variants/update`, `InstallResult`, `PluginSetting`, `VersionInfo`, plus the `BasicGame` / `SaveGameInfo` surfaces already used in the game definitions. Don't introduce APIs without checking they exist in the MO2 version being targeted (consult `docs/mod-organizer.md`).
-- **Clean-room discipline**: this implementation is *inspired by* AbsolutePhoenix's original installer, not derived from it. Do not paste, port, or reformat code from the original. Reproduce behavior from the spec at `docs/rebuild.md` and from direct observation of how Palworld mod archives are structured — never from the original source.
+- **Clean-room discipline**: this implementation is *inspired by* AbsolutePhoenyx's original installer, not derived from it. Do not paste, port, or reformat code from the original. Reproduce behavior from the spec at `docs/rebuild.md` and from direct observation of how Palworld mod archives are structured — never from the original source.
