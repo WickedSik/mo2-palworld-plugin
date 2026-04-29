@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-29
+
+### Fixed
+- Corrected misspelling of `AbsolutePhoenix` to `AbsolutePhoenyx` across all documentation.
+
 ## [0.3.0] - 2026-04-29
 
 - Refactored code to make it easier to maintain
