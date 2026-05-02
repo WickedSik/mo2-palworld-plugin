@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-05-02
+
+### Added
+- Documented minimum supported Mod Organizer 2 version (2.5.2 or newer) in the README requirements.
+
+### Changed
+- Rewrote `README.md` for non-technical mod users with a clearer structure: intro, features, requirements & installation, FAQ-style troubleshooting, credits, and license.
+- Reorganized installation steps so MO2 stays closed during file copying (Steps 1 and 2); Step 3 now consolidates launching MO2, verifying both the game list and plugin load, and configuring the platform settings.
+
 ## [0.3.1] - 2026-04-29
 
 ### Fixed

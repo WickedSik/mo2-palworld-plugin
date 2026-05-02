@@ -1,216 +1,122 @@
 # PalworldInstaller
 
-A Mod Organizer 2 plugin suite for seamless modding of **Palworld** and **Palworld Dedicated Server**. Automatically detects and rewrites mod archives into the correct in-game directory structure, with full support for platform-aware mod variants.
+PalworldInstaller is a Mod Organizer 2 (MO2) plugin that handles Palworld mod installations for you. When you install a mod archive in MO2, the plugin recognizes the Palworld files inside it and places them in the right folders automatically. It works for both Palworld and Palworld Dedicated Server, and it knows the difference between the Steam and Xbox/Game Pass versions of the game.
 
-> ⚠️ This readme shows the **finished** version of the plan, not the current progress. It will be updated as the plan updates, changes and improves.
-> What is inside the readme is **partially** available in the current development build.
+> **Note:** This readme describes the **finished** plugin. Some features are still being built and may not be available in the current development build yet. This file will be updated as the plugin evolves.
 
 ## Features
 
-- **Automatic archive triage** — Claims and installs `.pak`, `main.lua`, and `.json` mod files.
-- **Platform-aware variant selection** — Handles `{STEAM}` and `{XBOX}` marker folders in archives, installing the right variant for your platform.
-- **Palworld canonical layout** — Rewrites mod archives into Palworld's expected directory structure.
-- **Smart-routing with optional dialog** — Mods install silently when placement is unambiguous. The dialog appears only when active choices are required, and every option is pre-filled from best-guess routing.
-- **File-group awareness** — `.pak` files travel together with their `.utoc` / `.ucas` companions and sibling `AnimJSON/` / `SwapJSON/` directories as a single unit.
-- **FOMOD deference** — Automatically defers to MO2's FOMOD installer when an archive is a FOMOD package (configurable).
-- **UE4SS bootstrap skip** — Ignores UE4SS bootstrapper files, which are not mod payloads.
-- **Reinstall continuity** — Pre-fills dialog choices from previous installs (per-mod settings) when the dialog is shown.
-- **Legacy support** — Recognizes deprecated `{GAMEPASS}` marker folders with clear deprecation warnings.
+- **Installs Palworld mods automatically.** Drop a mod archive into MO2 and the plugin sorts the files into the correct locations. No manual moving needed.
+- **Knows your platform.** Some mods ship separate versions for Steam and Xbox/Game Pass. The plugin picks the one that matches your game and skips the other.
+- **Stays quiet when it can.** If the mod's layout is obvious, the plugin installs it silently. You only see a dialog when there is a real choice to make.
+- **Pre-fills choices for you.** When the dialog does appear, the plugin already has a sensible answer for every option. Most of the time you can just click OK.
+- **Keeps mod files together.** Some mods include `.pak` files plus companion files (`.utoc`, `.ucas`) or extra folders (`AnimJSON`, `SwapJSON`). The plugin treats them as one package so nothing gets separated.
+- **Defers to FOMOD when appropriate.** If a mod uses MO2's standard FOMOD installer, the plugin steps aside and lets MO2 handle it. You can change this in the settings.
+- **Skips framework files.** Files like `ue4ss.dll` belong to the UE4SS modding framework, not to any single mod. The plugin ignores them so they don't get installed as if they were a mod.
+- **Remembers your previous choices.** If you reinstall a mod, the dialog comes back pre-filled with what you picked last time.
+- **Recognizes older folder names.** Some mods still use `{GAMEPASS}` instead of `{XBOX}`. The plugin understands both.
 
-## Requirements
+## Requirements & Installation
 
-- **Mod Organizer 2** — Recent version with PyQt6 and the `mobase` Python binding (current stable).
-- **Palworld** or **Palworld Dedicated Server** — Already managed by MO2.
-- **MO2's `basic_games` plugin** — Ships with MO2 by default; required for game definitions.
+### What you need
 
-## Installation
+- **Mod Organizer 2**, version **2.5.2 or newer**.
+- **Palworld** or **Palworld Dedicated Server**, already set up in MO2.
+- **The `basic_games` plugin.** This ships with MO2 by default, so you most likely already have it.
 
-### Step 1 — Install game definitions
+### Step 1: Add Palworld to MO2's game list
 
-Copy the Palworld game definitions into MO2's `basic_games` plugin folder:
+Before MO2 knows about Palworld, you need to add two small game-definition files. These are not a separate plugin; they go *inside* MO2's existing `basic_games` plugin.
 
-```
-plugins/basic_games/games/game_palworld.py
-plugins/basic_games/games/game_palworld_server.py
-```
+1. Make sure MO2 is closed.
+2. Find your MO2 install folder.
+3. Open `plugins/basic_games/games/` inside it.
+4. Copy these two files into that folder:
+   - `game_palworld.py`
+   - `game_palworld_server.py`
 
-These files belong **inside** the existing `basic_games` plugin, not as a standalone plugin.
+### Step 2: Install the PalworldInstaller plugin
 
-**To install:**
+Now copy the plugin itself into MO2. Keep MO2 closed for this step too.
 
-1. Locate your MO2 installation directory.
-2. Navigate to `<MO2 install>/plugins/basic_games/games/`.
-3. Copy `game_palworld.py` and `game_palworld_server.py` into this folder.
-4. Restart MO2.
+1. Find your MO2 install folder.
+2. Copy the entire `PalworldInstaller` folder from the download into MO2's `plugins/` folder.
 
-**Verify:** When creating a new MO2 instance, "Palworld" and "Palworld Dedicated Server" should appear in the game list.
-
-### Step 2 — Install the PalworldInstaller plugin
-
-Copy the entire `PalworldInstaller` folder into MO2's plugins directory:
+The result should look like:
 
 ```
-plugins/PalworldInstaller/
-├── __init__.py
-├── installer.py
-└── ui/
-    ├── __init__.py
-    └── dialog.py
+<MO2 install>/plugins/PalworldInstaller/
+    __init__.py
+    installer.py
+    ui/
+        __init__.py
+        dialog.py
 ```
 
-**To install:**
+### Step 3: Verify and configure
 
-1. Locate your MO2 installation directory.
-2. Copy the entire `plugins/PalworldInstaller/` folder to `<MO2 install>/plugins/`.
-3. The result should be `<MO2 install>/plugins/PalworldInstaller/` containing `__init__.py`, `installer.py`, and the `ui/` subpackage with `__init__.py` and `dialog.py`.
-4. Restart MO2.
+Now start MO2 and check that everything is in place.
 
-**Verify:** In MO2, go to Settings → Plugins. You should see "PalworldInstaller" listed with six settings:
+**Check the game list.** When you create a new MO2 instance, "Palworld" and "Palworld Dedicated Server" should appear in the list of games.
 
-- `enabled` (checkbox)
-- `prefer_fomod` (checkbox)
-- `priority` (number)
-- `palworld_platform` (dropdown)
-- `palworld_server_platform` (dropdown)
-- `force_dialog` (checkbox, debug)
+**Check the plugin is loaded.** Go to **Settings → Plugins**. You should see "PalworldInstaller" in the list, with several settings underneath it.
 
-### Step 3 — Configure platform settings
+**Set your platform.** Still in **Settings → Plugins → PalworldInstaller**, set the platform for each game:
 
-In MO2, go to Settings → Plugins → PalworldInstaller and set the platform for each game:
+- `palworld_platform`: for the regular game. Set to `steam` or `xbox`.
+- `palworld_server_platform`: for the Dedicated Server. Set to `steam` or `xbox`.
 
-- **`palworld_platform`** — Platform variant for the Palworld client game. Accepts `steam` (default) or `xbox`.
-- **`palworld_server_platform`** — Platform variant for Palworld Dedicated Server. Accepts `steam` (default) or `xbox`.
+Pick `steam` if you bought the game on Steam. Pick `xbox` if you have it through Xbox or PC Game Pass (both use the same internal layout). If you only own one of the two, set the one you use and leave the other alone.
 
-Choose the platform that matches your Palworld installation:
+### Other settings
 
-- **Steam** — Standard Steam version of the game.
-- **Xbox** — Xbox console version or PC Game Pass version (both use the WinGDK runtime).
+You usually don't need to touch these, but here is what they do:
 
-If you only manage one game, configure the relevant setting and leave the other at its default.
-
-## Configuration
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `enabled` | Boolean | `True` | Enable or disable the installer. |
-| `prefer_fomod` | Boolean | `True` | Defer to MO2's FOMOD installer when an archive contains `fomod/moduleconfig.xml`. |
-| `priority` | Integer | `120` | Installer priority. Higher values run first. This default ensures PalworldInstaller wins for Palworld archives but allows FOMOD to take precedence when enabled. |
-| `palworld_platform` | String | `steam` | Platform variant for Palworld (client): `steam` or `xbox`. |
-| `palworld_server_platform` | String | `steam` | Platform variant for Palworld Dedicated Server: `steam` or `xbox`. |
-| `force_dialog` | Boolean | `False` | **Debug only.** Always show the install dialog, even when the silent-install predicate would bypass it. Useful for verifying smart-routing defaults before committing to an install. |
-
-### Legacy platform values
-
-The `gamepass` value is recognized as a deprecated alias of `xbox`. If you have `gamepass` configured, the plugin normalizes it to `xbox` and logs a one-line warning:
-
-```
-palworld_platform value "gamepass" is deprecated; treating as "xbox" (Game Pass and Xbox share the WinGDK runtime).
-```
-
-This compatibility layer exists for archives and settings from older installations. When updating, migrate to `xbox` for clarity.
-
-## Usage
-
-When you install a mod archive for Palworld or Palworld Dedicated Server, the plugin claims it. What happens next depends on whether the archive's layout is unambiguous: most installs complete silently with smart-routing defaults, and the dialog only appears when there is a real choice to make.
-
-### Silent install (no dialog)
-
-The dialog is bypassed when the plugin can place every file with high confidence. This is the common case for well-structured single-pak mods. Concretely, no dialog is shown when **all** of the following hold:
-
-- Exactly one `.pak` file group is present (a `.pak` plus any `.utoc` / `.ucas` companions and sibling JSON folders that share its filename stem), and that group has an unambiguous destination from the routing heuristics below.
-- No `main.lua` script mods are detected, **or** every detected script mod has a single, unambiguous `<modname>/Scripts/main.lua` derivation.
-- No file requires a custom path.
-
-In silent mode the plugin applies the smart-routing heuristics directly and the install proceeds without prompts.
-
-#### Smart-routing heuristics
-
-These heuristics drive both silent installs and the pre-filled defaults shown when the dialog appears:
-
-| Detected pattern | Default destination |
+| Setting | What it does |
 |---|---|
-| `*_P.pak` (and its file group) | `Content/Paks/~mods/` |
-| `*.pak` with sibling `AnimJSON/` or `SwapJSON/` directories at the archive root | `Content/Paks/~mods/` (the JSON directories travel with the pak) |
-| Bare `*.pak` with no other indicators | `Content/Paks/LogicMods/` |
-| Loose root `*.json` (no parent context) | `Content/Paks/LogicMods/` |
-| `<modname>/Scripts/main.lua` | `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` for Xbox) |
+| `enabled` | Turns the plugin on or off. Default: on. |
+| `prefer_fomod` | When a mod ships its own FOMOD installer, let MO2's built-in FOMOD handler take over instead. Default: on. |
+| `priority` | Where this plugin sits in MO2's installer queue. Higher means it gets first pick. Default: 120. |
+| `palworld_platform` | Steam or Xbox version of Palworld. Default: `steam`. |
+| `palworld_server_platform` | Steam or Xbox version of the Dedicated Server. Default: `steam`. |
+| `force_dialog` | Always show the install dialog, even when the plugin would normally install silently. Useful for testing. Default: off. |
 
-### Interactive install (dialog)
-
-When placement is ambiguous — multiple `.pak` groups with no single obvious destination, multiple script mods to triage, or a mod that benefits from a custom path — the dialog appears with **every option pre-filled from the smart-routing heuristics above**. You only need to override the defaults that don't fit; everything else can be accepted as-is.
-
-The dialog has three sections:
-
-1. **Mod name** — An editable combo box with suggestions drawn from the archive name and detected mod folder names. This name is used for script mods placed in `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` for Xbox).
-
-2. **Script mods** — A checkbox list of detected `main.lua` script files. Tick the checkbox for each script you want to install; uncheck to skip. Defaults to checked when the script's `<modname>` derivation is unambiguous.
-
-3. **Pak file groups** — One row per `.pak` file **group** (not per individual file). The row's label shows the `.pak` filename, but the destination you select applies to the whole group: the `.pak` itself, any `.utoc` / `.ucas` companions sharing its filename stem, and any `AnimJSON/` / `SwapJSON/` sibling directories that travel with it. Each row offers:
-   - **ROOT** — `Content/Paks/ROOT/`
-   - **~mods** — `Content/Paks/~mods/`
-   - **LogicMods** — `Content/Paks/LogicMods/`
-   - **Custom** — A custom path (enter in the text field below the combo)
-   - **SKIP** — Do not install this group
-
-Choose the destination appropriate to the mod. Select **Custom** to type a custom path; it becomes active only when the combo is set to **Custom**. **SKIP** removes the entire group, not just the `.pak`.
-
-### File grouping
-
-`.pak` files in Palworld archives often ship with companions that must travel with them or the mod will not load:
-
-- **`.utoc` and `.ucas` companions** — Sibling files at the archive root sharing the filename stem of a `.pak` (e.g. `mymod.pak` + `mymod.utoc` + `mymod.ucas`) are grouped with that `.pak`.
-- **`AnimJSON/` and `SwapJSON/` sibling directories** — Root-level JSON directories that accompany a `.pak` are grouped with it and routed to the same destination.
-
-The plugin treats these as a single unit. Whether the install runs silently or via the dialog, you choose one destination for the whole group; companions follow the `.pak` automatically.
-
-### Archive layout support
-
-The plugin claims archives containing:
-
-- `.pak` files — Unreal Engine mod packages (with their `.utoc` / `.ucas` / sibling JSON companions).
-- `main.lua` — Lua script mods (expected in a `<modname>/Scripts/main.lua` structure).
-- `.json` — Configuration files (installed to `Content/Paks/LogicMods/` when loose at the root).
-
-Archives that also contain platform markers (`{STEAM}`, `{XBOX}`, or the legacy `{GAMEPASS}`) have the non-selected variant removed and the selected one promoted to the root, transparent to the dialog.
-
-Archives containing `ue4ss.dll` are skipped (this is a UE4SS bootstrapper, not a mod payload).
-
-### Where files end up
-
-| File type | Destination |
-|-----------|-------------|
-| `*.pak` (and grouped `.utoc` / `.ucas` companions, sibling `AnimJSON/` / `SwapJSON/` directories) | `Content/Paks/{chosen_or_default_destination}/` |
-| `<modname>/Scripts/main.lua` | `Binaries/Win64/Mods/<modname>/` (or `Binaries/WinGDK/Mods/<modname>/` if Xbox platform) |
-| Loose root `*.json` (no parent context) | `Content/Paks/LogicMods/` |
-| Anything else at archive root | Removed |
-
-The destination column shows where each file group lands. When the install is silent, the destination comes from the smart-routing heuristics above; when the dialog is shown, it comes from your selection (defaulting to the heuristic).
+If you have an older config that uses `gamepass` instead of `xbox`, the plugin treats it as `xbox` and writes a short note to the log. You can leave it alone, but updating to `xbox` is cleaner.
 
 ## Troubleshooting
 
-### Plugin does not appear in Settings → Plugins
+**Why doesn't PalworldInstaller show up in Settings → Plugins?**
 
-**Issue:** PalworldInstaller is not listed in the plugins list.
+The plugin folder probably didn't land in the right place. Check that you copied the entire `PalworldInstaller` folder (with `__init__.py`, `installer.py`, and the `ui/` subfolder inside) into your MO2 `plugins/` folder, then restart MO2.
 
-**Solution:** Check that you copied the entire `plugins/PalworldInstaller/` folder (including both `__init__.py` and `installer.py`) into `<MO2 install>/plugins/`, then restart MO2.
+**Why does MO2 use a different installer when I try to install a Palworld mod?**
 
-### Archive is not claimed by PalworldInstaller
+Usually one of these is the cause:
 
-**Issue:** Clicking "Install" on a Palworld mod shows MO2's default installer instead of PalworldInstaller.
+- A different game is active in MO2, not Palworld or Palworld Dedicated Server.
+- The mod is a FOMOD package and `prefer_fomod` is on. That's intentional; FOMOD takes over for those.
+- The archive doesn't contain `.pak` files or `main.lua` scripts, so there is nothing for the plugin to recognize.
+- The archive contains `ue4ss.dll`, which the plugin deliberately skips because it's the modding framework rather than a mod.
 
-**Possible causes:**
-- The managed game is not Palworld or Palworld Dedicated Server. Ensure you have the correct game instance selected.
-- The archive does not contain `.pak` files or `main.lua` script mods. Some mods may use a different structure.
-- The archive contains `ue4ss.dll`, which is skipped by design (it is a bootstrapper, not a mod payload).
-- The archive is a FOMOD package **and** `prefer_fomod` is enabled. FOMOD takes precedence.
+**Why does the dialog show a warning about Steam or Xbox?**
 
-**Solution:** Verify the archive structure and your MO2 game instance. If the plugin still doesn't claim it, check the MO2 console for logs.
+The mod has files for one platform, but your settings are for the other. The plugin uses whatever is in the archive and shows the warning so you know. If the mod really does have the wrong version for your game, look for the right one on the mod page. Otherwise, double-check that your platform setting matches your installed game.
 
-### Dialog shows warnings about platform variants
+**Why does the dialog appear for some mods and not others?**
 
-**Issue:** A message appears about a mismatched platform variant (e.g., "Archive contains only {STEAM} but {XBOX} is configured").
+The plugin only asks when there is a real decision to make. Simple mods (one `.pak` file with an obvious destination) install silently. Mods with multiple files going to different places, several scripts, or anything ambiguous get the dialog so you can confirm. Both behaviors are normal.
 
-**Solution:** Check your platform setting in Settings → Plugins → PalworldInstaller. If the warning is correct (you need the other platform), the plugin uses what is available and logs the discrepancy. For future installs, either update your platform setting or find an archive with the correct variant.
+**Why are some files in the archive not installed?**
+
+The plugin only installs files it recognizes as Palworld mod files: `.pak` (and their `.utoc` / `.ucas` companions, plus `AnimJSON` / `SwapJSON` folders), `main.lua` script mods, and loose `.json` config files. Anything else sitting at the top of the archive (readmes, screenshots, source files) is left out, because it is not part of what the game actually loads.
+
+**The mod installed but the game doesn't see it. What now?**
+
+PalworldInstaller only places files in the right folders. If the mod is installed but the game ignores it, the cause is usually somewhere else: the mod may need UE4SS or another mod loader set up in the game itself, the mod may be disabled or out of order in MO2, or it may simply not be compatible with your game version. Check the mod's own page for setup notes.
+
+**Where can I see what the plugin did during an install?**
+
+Open MO2's log panel (View → Log if it's hidden). The plugin writes a short summary for each install, including any warnings about platforms or deprecated folder names.
 
 ## Credits
 
@@ -219,7 +125,3 @@ This plugin is a clean-room implementation inspired by **AbsolutePhoenyx**'s ori
 ## License
 
 This project is licensed under the GNU General Public License v3 (GPL-3.0). See the [LICENSE](LICENSE) file for details.
-
----
-
-For more information about Mod Organizer 2, visit the [Mod Organizer 2 GitHub repository](https://github.com/ModOrganizer2/modorganizer) or the [MO2 Documentation](https://modorganizer.github.io/).

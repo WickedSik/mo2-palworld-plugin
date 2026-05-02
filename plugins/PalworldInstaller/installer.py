@@ -158,7 +158,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         )
 
     def version(self) -> mobase.VersionInfo:
-        return mobase.VersionInfo(0, 3, 1, mobase.ReleaseType.PRE_ALPHA)
+        return mobase.VersionInfo(0, 3, 2, mobase.ReleaseType.PRE_ALPHA)
 
     def settings(self) -> List[mobase.PluginSetting]:
         return [
@@ -285,7 +285,9 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     (s.derived_name, s.main_lua_display, not s.ambiguous)
                     for s in scripts
                 ]
-                dlg = UnifiedUI(self._parent, str(name), script_rows, pak_rows)
+                dlg = UnifiedUI(
+                    self._parent, str(name), script_rows, pak_rows, platform
+                )
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     return mobase.InstallResult.CANCELED
                 # Per docs/mod-organizer.md §6.1: mutate via update(), never

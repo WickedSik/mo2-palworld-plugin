@@ -62,6 +62,11 @@ class UnifiedUI(QDialog):
     ``LogicMods`` selects the matching combo entry; anything else (a
     pre-arranged custom path supplied by the SSOT) flips the combo to
     ``Custom`` and pre-fills the line edit with that string.
+
+    A read-only platform indicator at the top of the dialog shows the
+    resolved platform from PluginSetting (``steam`` or ``xbox``). Per Q1
+    in docs/rebuild.md §6, the dialog never offers a per-install override:
+    platform is global per managed game.
     """
 
     def __init__(
@@ -70,12 +75,23 @@ class UnifiedUI(QDialog):
         suggested_name: str,
         script_rows: List[Tuple[str, str, bool]],
         pak_rows: List[Tuple[str, str, str]],
+        platform: str,
     ):
         super().__init__(parent)
         self.setWindowTitle("Palworld Mod Installer")
         self.setModal(True)
 
         layout = QVBoxLayout(self)
+
+        # --- Platform indicator (read-only) ------------------------------
+        # Surfaces the resolved platform from PluginSetting so the user can
+        # see which variant the installer will route to. Read-only by design
+        # (Q1 resolution): per-install overrides would conflict with the
+        # "global per managed game" principle in §5 of docs/rebuild.md.
+        platform_label = QLabel(
+            f"<b>Platform:</b> {platform.capitalize()} <i>(from settings)</i>"
+        )
+        layout.addWidget(platform_label)
 
         # --- Section 1: Mod name -----------------------------------------
         name_group = QGroupBox("Mod name")
