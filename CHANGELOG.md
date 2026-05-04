@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Installer dialog now wraps the script-mods and pak-groups sections in a scroll region capped at 500 pixels, so archives with many entries no longer push the OK/Cancel buttons off-screen. The platform indicator, mod-name combo, and button row remain pinned outside the scroll area.
+
 ## [0.3.2] - 2026-05-02
 
 ### Added

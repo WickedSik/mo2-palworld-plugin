@@ -23,16 +23,19 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -108,6 +111,15 @@ class UnifiedUI(QDialog):
         name_layout.addRow("Name:", self._name_combo)
         layout.addWidget(name_group)
 
+        # --- Scrollable body (sections 2 + 3) ----------------------------
+        # Sections 2 and 3 grow with archive contents and can overflow the
+        # screen on mods with many scripts or pak groups. The platform label,
+        # mod-name combo, and button box stay outside the scroll area so the
+        # OK/Cancel buttons and primary context remain visible at all times.
+        body_widget = QWidget()
+        body_layout = QVBoxLayout(body_widget)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+
         # --- Section 2: Script mods --------------------------------------
         self._script_checkboxes: list[QCheckBox] = []
         if script_rows:
@@ -118,7 +130,7 @@ class UnifiedUI(QDialog):
                 cb.setChecked(default_checked)
                 self._script_checkboxes.append(cb)
                 scripts_layout.addWidget(cb)
-            layout.addWidget(scripts_group)
+            body_layout.addWidget(scripts_group)
 
         # --- Section 3: Pak groups ---------------------------------------
         self._pak_rows: dict[str, tuple[QComboBox, QLineEdit]] = {}
@@ -160,7 +172,17 @@ class UnifiedUI(QDialog):
 
                 pak_layout.addWidget(row_widget)
                 self._pak_rows[group_id] = (combo, line_edit)
-            layout.addWidget(pak_group_box)
+            body_layout.addWidget(pak_group_box)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(body_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMaximumHeight(500)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        layout.addWidget(scroll_area)
 
         # --- Buttons -----------------------------------------------------
         buttons = QDialogButtonBox(
