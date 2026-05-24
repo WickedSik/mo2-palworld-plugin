@@ -61,7 +61,16 @@ Rules:
 - Do **not** change the `ReleaseType` value as part of a numeric bump. If the user wants to promote (e.g. `PRE_ALPHA` → `ALPHA` → `BETA` → `FINAL`), they will say so explicitly — otherwise leave it alone.
 - Edit the file directly with the `Edit` tool. Do not generate scripts, `sed` invocations, or rely on regex tooling — the LLM performs the change.
 
-### 5. Update CHANGELOG.md
+### 5. Update Game Support Plugin Versions
+
+Update the `Version` class attribute in both game support files to match the new version:
+
+- `plugins/basic_games/games/game_palworld.py` — `Version = "X.Y.Z"`
+- `plugins/basic_games/games/game_palworld_server.py` — `Version = "X.Y.Z"`
+
+Use the `Edit` tool to replace the existing `Version = "..."` line in each file.
+
+### 6. Update CHANGELOG.md
 
 Transform the `## [Unreleased]` section:
 
@@ -96,11 +105,11 @@ Rules:
 - Preserve all content that was under `[Unreleased]`
 - The `[Unreleased]` section remains but becomes empty (ready for next development cycle)
 
-### 6. Stage and Commit
+### 7. Stage and Commit
 
 Stage the modified files:
 ```bash
-git add plugins/PalworldInstaller/installer.py CHANGELOG.md
+git add plugins/PalworldInstaller/installer.py plugins/basic_games/games/game_palworld.py plugins/basic_games/games/game_palworld_server.py CHANGELOG.md
 ```
 
 Create commit with message:
@@ -108,7 +117,7 @@ Create commit with message:
 Chore: Prepare release X.Y.Z
 ```
 
-### 7. Create Git Tag
+### 8. Create Git Tag
 
 Create an annotated tag:
 ```bash
@@ -126,6 +135,8 @@ Release X.Y.Z prepared successfully!
 
 Updated files:
   - plugins/PalworldInstaller/installer.py (VersionInfo X.Y.Z)
+  - plugins/basic_games/games/game_palworld.py (Version "X.Y.Z")
+  - plugins/basic_games/games/game_palworld_server.py (Version "X.Y.Z")
   - CHANGELOG.md ([Unreleased] → [X.Y.Z] - YYYY-MM-DD)
 
 Git status:
