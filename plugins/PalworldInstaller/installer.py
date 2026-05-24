@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import List
 
 import mobase
 from PyQt6.QtCore import QCoreApplication
 from PyQt6.QtWidgets import QDialog, QWidget
 
+from .models import (
+    DiscoveryResult,
+    PakGroup,
+    PlatformVariantMismatch,
+    RecognitionResult,
+    RequestManual,
+    WalkContext,
+    suffix,
+)
 from .presets import PAK_PRESETS
+from .recognizers import RECOGNIZERS
 from .ui.dialog import UnifiedUI
 
 
@@ -51,14 +60,6 @@ def _extract_marker_platform(name: str) -> str | None:
     return _PLATFORM_BY_MARKER_NAME.get(_normalize_marker_inner(name))
 
 
-def _suffix(entry: mobase.FileTreeEntry) -> str:
-    """Lower-case file suffix. mobase preserves the on-disk case in
-    `entry.suffix()`; archives in the wild use mixed case (`.PAK`,
-    `.Pak`). Normalising at every comparison site keeps detection
-    consistent across discovery, triage, and validation passes."""
-    return entry.suffix().lower()
-
-
 _GAME_PLATFORM_KEYS = {
     "Palworld": "palworld_platform",
     "Palworld Server": "palworld_server_platform",
@@ -67,66 +68,16 @@ _VALID_PLATFORMS = ("steam", "xbox")
 
 _WRAPPER_FOLDERS = ("palworld", "pal")
 _ANIM_SWAP_FOLDERS = ("animjson", "swapjson")
-_PAK_COMPANION_SUFFIXES = ("pak", "utoc", "ucas")
 
 # Suffixes that M1 triage treats as mod content. Used by M5 root-content
 # stripping when marker folders and loose root-level mod files coexist.
 _M1_TRIAGE_SUFFIXES = frozenset({"pak", "utoc", "ucas", "lua", "json"})
 
 
-class PlatformVariantMismatch(Exception):
-    """Raised by `_apply_platform_variant` when an archive contains
-    platform marker folders but none match the configured platform.
-
-    The install must abort with `InstallResult.FAILED` before any
-    destructive tree mutation occurs (so that "manual installation"
-    remains a real option for the user).
-    """
-
-    def __init__(self, available: list[str], configured: str) -> None:
-        self.available = available
-        self.configured = configured
-        super().__init__(
-            f"archive contains only {sorted(set(available))} "
-            f"but configured platform is {configured}"
-        )
-
-
-@dataclass
-class PakGroup:
-    """One .pak stem group: the .pak plus its same-stem .utoc/.ucas
-    companions in the same parent directory, plus any sibling AnimJSON /
-    SwapJSON dirs at the archive root (associated with every root-level
-    group at that scope).
-
-    ``group_id`` is the pak's full path-from-tree-root and serves as the
-    stable key into routing-decision dicts -- two paks sharing a stem in
-    different directories are distinct groups.
-
-    ``current_parent_path`` is the path of the directory that holds the
-    pak today (``""`` means the archive root). The routing SSOT consumes
-    it to derive the default destination for pre-arranged content.
-    """
-
-    group_id: str
-    stem: str
-    pak: mobase.FileTreeEntry
-    companions: list[mobase.FileTreeEntry] = field(default_factory=list)
-    json_dirs: list[mobase.FileTreeEntry] = field(default_factory=list)
-    current_parent_path: str = ""
-
-
-@dataclass
-class ScriptMod:
-    """One detected main.lua. ``mod_dir`` is the directory the installer
-    moves on INSTALL or removes on SKIP; for ambiguous root-scope main.lua
-    it may equal the tree itself (handled defensively at SKIP time)."""
-
-    main_lua: mobase.FileTreeEntry
-    mod_dir: mobase.FileTreeEntry
-    derived_name: str
-    main_lua_display: str
-    ambiguous: bool
+def _format_pak_label(g: PakGroup) -> str:
+    if g.current_parent_path:
+        return f"{g.pak.name()}  ({g.current_parent_path}/)"
+    return g.pak.name()
 
 
 class PalworldInstaller(mobase.IPluginInstallerSimple):
@@ -153,8 +104,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
     def description(self) -> str:
         return self._tr(
             "Custom installer for Palworld pak and lua script mods. "
-            "M3: optional UnifiedUI dialog for non-trivial archives, "
-            "with M1 smart routing and M2 platform-aware variants."
+            "M6: recognizer-based architecture with prioritized "
+            "detection, M3 dialog, and M2 platform-aware variants."
         )
 
     def version(self) -> mobase.VersionInfo:
@@ -228,7 +179,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     flags["fomod"] = True
                 elif lower == "ue4ss.dll":
                     flags["ue4ss"] = True
-                elif _suffix(entry) == "pak":
+                elif suffix(entry) == "pak":
                     flags["pak"] = True
                 elif lower == "main.lua":
                     flags["lua"] = True
@@ -256,63 +207,78 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             for wrapper in _WRAPPER_FOLDERS:
                 self._strip_wrapper(tree, wrapper)
 
-            # Lift root-level pre-arranged LogicMods/ and ~Mods/ under
-            # Content/Paks/ so discovery sees them and cleanup spares them.
             self._promote_prearranged_layout(tree)
 
-            # M3: discover groups and scripts post-platform-resolution; the
-            # SSOT in _compute_pak_routing seeds both the silent path and
-            # the dialog defaults.
-            groups, json_dirs, loose_jsons = self._discover_pak_groups(tree)
-            scripts = self._discover_script_mods(tree)
-            default_routing = self._compute_pak_routing(groups)
+            ctx = self._build_walk_context(tree, platform, str(name))
+
+            # Gather-all: run detect() on every recognizer, then pick
+            # the highest-priority (lowest number) Match or RequestManual.
+            verdicts = [
+                (r, r.detect(tree, ctx)) for r in RECOGNIZERS
+            ]
+            winner = None
+            winner_verdict = None
+            for recognizer, verdict in verdicts:
+                if verdict == RecognitionResult.MATCH or isinstance(
+                    verdict, RequestManual
+                ):
+                    winner = recognizer
+                    winner_verdict = verdict
+                    break
+
+            if winner is None:
+                return mobase.InstallResult.NOT_ATTEMPTED
+
+            if isinstance(winner_verdict, RequestManual):
+                log.info(
+                    f"PalworldInstaller: [{winner.name}] "
+                    f"{winner_verdict.reason} for {str(name)}"
+                )
+                return mobase.InstallResult.NOT_ATTEMPTED
+
+            discovery = winner.discover(tree, ctx)
 
             force_dialog = bool(
                 self._organizer.pluginSetting(self.name(), "force_dialog")
             )
-            if force_dialog or self._should_show_dialog(
-                groups, default_routing, scripts
-            ):
+            if force_dialog or discovery.should_show_dialog:
                 pak_rows = [
                     (
                         g.group_id,
-                        default_routing[g.group_id],
-                        self._format_pak_label(g),
+                        discovery.default_routing[g.group_id],
+                        _format_pak_label(g),
                     )
-                    for g in groups
+                    for g in discovery.pak_groups
                 ]
                 script_rows = [
                     (s.derived_name, s.main_lua_display, not s.ambiguous)
-                    for s in scripts
+                    for s in discovery.scripts
                 ]
                 dlg = UnifiedUI(
                     self._parent, str(name), script_rows, pak_rows, platform
                 )
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     return mobase.InstallResult.CANCELED
-                # Per docs/mod-organizer.md §6.1: mutate via update(), never
-                # reassign the local `name` reference.
+                # Per docs/mod-organizer.md §6.1: mutate via update(),
+                # never reassign the local `name` reference.
                 name.update(dlg.get_new_mod_name(), mobase.GuessQuality.USER)
-                pak_decisions = dlg.get_pak_locations()
-                script_statuses = dlg.get_script_statuses()
+                decisions = self._build_decisions(
+                    discovery,
+                    pak_overrides=dlg.get_pak_locations(),
+                    script_overrides=dlg.get_script_statuses(),
+                    mod_name=str(name),
+                )
             else:
-                self._log_silent_install(groups, default_routing, scripts)
-                pak_decisions = dict(default_routing)
-                script_statuses = ["INSTALL"] * len(scripts)
+                self._log_silent_install(discovery, str(name))
+                decisions = self._build_decisions(
+                    discovery, mod_name=str(name)
+                )
 
-            self._drop_skipped_scripts(tree, scripts, script_statuses)
-            self._apply_pak_routing(
-                tree, groups, pak_decisions, json_dirs, loose_jsons
-            )
-            # `name` reflects either the user's dialog choice (after
-            # `name.update(...)` above) or the original suggestion on the
-            # silent path -- exactly the fallback the spec requires for
-            # scripts that lack a usable archive-side <modname>.
-            self._relocate_scripts(
-                tree, platform, scripts, script_statuses, str(name)
-            )
+            winner.route(tree, ctx, decisions)
 
-            allowed_root = self._compute_allowed_root_names(groups, pak_decisions)
+            allowed_root = self._compute_allowed_root_names(
+                discovery, decisions
+            )
             tree.removeIf(
                 lambda e: e.parent() is tree
                 and e.name().lower() not in allowed_root
@@ -415,7 +381,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         for entry in list(tree):
             if not entry.isFile():
                 continue
-            if _suffix(entry) in _M1_TRIAGE_SUFFIXES:
+            if suffix(entry) in _M1_TRIAGE_SUFFIXES:
                 dropped.append(entry.name())
                 tree.remove(entry)
         if dropped:
@@ -459,194 +425,6 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         when both are present in the archive."""
         return _normalize_marker_inner(name) == "xbox"
 
-    # --- M3: script discovery -------------------------------------------
-    def _discover_script_mods(self, tree: mobase.IFileTree) -> list[ScriptMod]:
-        """Find every main.lua in the tree and decide whether its
-        <modname> derivation is unambiguous.
-
-        A script is unambiguous iff its path is exactly
-        <modname>/Scripts/main.lua at the (post wrapper-strip) archive
-        root. Anything else -- bare main.lua at root, missing Scripts/
-        parent, deeper nesting, or duplicate derived names -- is flagged
-        ambiguous so the dialog appears and the checkbox defaults to
-        unchecked.
-        """
-        found: dict[int, ScriptMod] = {}
-
-        def visit(
-            path: str, entry: mobase.FileTreeEntry
-        ) -> mobase.IFileTree.WalkReturn:
-            if not (entry.isFile() and entry.name().lower() == "main.lua"):
-                return mobase.IFileTree.WalkReturn.CONTINUE
-
-            scripts_dir = entry.parent()
-            if scripts_dir is None or scripts_dir is tree:
-                sm = ScriptMod(
-                    main_lua=entry,
-                    mod_dir=tree if scripts_dir is None else scripts_dir,
-                    derived_name="(root)",
-                    main_lua_display=path,
-                    ambiguous=True,
-                )
-            elif scripts_dir.name().lower() != "scripts":
-                sm = ScriptMod(
-                    main_lua=entry,
-                    mod_dir=scripts_dir,
-                    derived_name=scripts_dir.name(),
-                    main_lua_display=path,
-                    ambiguous=True,
-                )
-            else:
-                parent_of_scripts = scripts_dir.parent()
-                if parent_of_scripts is None or parent_of_scripts is tree:
-                    sm = ScriptMod(
-                        main_lua=entry,
-                        mod_dir=scripts_dir,
-                        derived_name="Scripts",
-                        main_lua_display=path,
-                        ambiguous=True,
-                    )
-                else:
-                    ambiguous = parent_of_scripts.parent() is not tree
-                    sm = ScriptMod(
-                        main_lua=entry,
-                        mod_dir=parent_of_scripts,
-                        derived_name=parent_of_scripts.name(),
-                        main_lua_display=path,
-                        ambiguous=ambiguous,
-                    )
-
-            key = id(sm.mod_dir)
-            if key not in found:
-                found[key] = sm
-            return mobase.IFileTree.WalkReturn.CONTINUE
-
-        tree.walk(visit)
-
-        # Duplicate derived names → mark every occurrence ambiguous.
-        counts: dict[str, int] = {}
-        for sm in found.values():
-            counts[sm.derived_name] = counts.get(sm.derived_name, 0) + 1
-        for sm in found.values():
-            if counts[sm.derived_name] > 1:
-                sm.ambiguous = True
-
-        return list(found.values())
-
-    def _drop_skipped_scripts(
-        self,
-        tree: mobase.IFileTree,
-        scripts: list[ScriptMod],
-        statuses: list[str],
-    ) -> None:
-        """Remove the <modname> directory of every script the user marked
-        SKIP, before _relocate_scripts walks the tree.
-
-        For ambiguous scripts whose mod_dir is the tree root, only the
-        main.lua entry is removed (we can't remove the tree itself).
-        """
-        to_remove: list[mobase.FileTreeEntry] = []
-        for script, status in zip(scripts, statuses):
-            if status != "SKIP":
-                continue
-            if script.mod_dir is tree:
-                to_remove.append(script.main_lua)
-            else:
-                to_remove.append(script.mod_dir)
-        for entry in to_remove:
-            tree.remove(entry)
-
-    def _relocate_scripts(
-        self,
-        tree: mobase.IFileTree,
-        platform: str,
-        scripts: list[ScriptMod],
-        statuses: list[str],
-        archive_mod_name: str,
-    ) -> None:
-        """Move every INSTALL'd script under
-        ``Binaries/{Win64|WinGDK}/Mods/<modname>/Scripts/main.lua``.
-
-        The destination ``<modname>`` is the script's own ``derived_name``
-        (the mod author's chosen directory) when meaningful; for
-        scripts with no usable derivation -- bare ``main.lua`` at archive
-        root, or a ``Scripts/`` folder directly at root with no parent
-        modname -- we fall back to ``archive_mod_name`` (the user-chosen
-        mod name from the dialog, or the suggestion in
-        ``name: GuessedString`` on the silent path).
-
-        Source layouts handled:
-
-        * ``<modname>/Scripts/main.lua``        -> move whole ``<modname>``.
-        * ``Scripts/main.lua`` at archive root  -> move ``Scripts`` under
-          ``<archive_mod_name>``.
-        * ``<somedir>/main.lua`` (no Scripts/)  -> create
-          ``<derived_name>/Scripts`` and move just ``main.lua``.
-        * Bare ``main.lua`` at archive root     -> create
-          ``<archive_mod_name>/Scripts`` and move just ``main.lua``.
-        """
-        base = (
-            "Binaries/WinGDK/Mods" if platform == "xbox"
-            else "Binaries/Win64/Mods"
-        )
-
-        for script, status in zip(scripts, statuses):
-            if status != "INSTALL":
-                continue
-
-            # Pick a sensible <modname>: derivations like "(root)" /
-            # "Scripts" don't name a real mod, fall back to archive name.
-            if (
-                script.mod_dir is tree
-                or script.derived_name in ("(root)", "Scripts")
-            ):
-                target_modname = archive_mod_name
-            else:
-                target_modname = script.derived_name
-
-            scripts_parent = script.main_lua.parent()
-            has_real_scripts_parent = (
-                scripts_parent is not None
-                and scripts_parent is not tree
-                and scripts_parent.name().lower() == "scripts"
-            )
-
-            if (
-                has_real_scripts_parent
-                and script.mod_dir is not tree
-                and scripts_parent is not script.mod_dir
-            ):
-                # <modname>/Scripts/main.lua: move the whole modname dir,
-                # preserving its Scripts/ substructure.
-                tree.move(
-                    script.mod_dir,
-                    f"{base}/{target_modname}",
-                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
-                )
-            elif (
-                has_real_scripts_parent
-                and scripts_parent is script.mod_dir
-            ):
-                # Scripts/main.lua at archive root: mod_dir IS the Scripts
-                # folder; nest it under <archive_mod_name>.
-                tree.move(
-                    script.mod_dir,
-                    f"{base}/{target_modname}/Scripts",
-                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
-                )
-            else:
-                # No Scripts/ folder anywhere on the path: synthesize the
-                # canonical <modname>/Scripts/ structure and move only the
-                # main.lua entry.
-                target_scripts = tree.addDirectory(
-                    f"{base}/{target_modname}/Scripts"
-                )
-                tree.move(
-                    script.main_lua,
-                    f"{target_scripts.path('/')}/main.lua",
-                    policy=mobase.IFileTree.InsertPolicy.REPLACE,
-                )
-
     def _promote_prearranged_layout(self, tree: mobase.IFileTree) -> None:
         """Lift root-level pre-arranged destination dirs into the standard
         ``Content/Paks/<dest>/`` layout.
@@ -679,16 +457,6 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 )
             tree.remove(source)
 
-    def _entry_parent_path(
-        self, entry: mobase.FileTreeEntry, tree: mobase.IFileTree
-    ) -> str:
-        """Return the parent directory's path-from-tree-root, or ``""``
-        for entries directly under the archive root."""
-        parent = entry.parent()
-        if parent is None or parent is tree:
-            return ""
-        return parent.path("/")
-
     def _strip_wrapper(self, tree: mobase.IFileTree, wrapper_lower: str) -> None:
         wrapper = next(
             (
@@ -710,283 +478,106 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             )
         tree.remove(wrapper)
 
-    # --- M3: pak group discovery / routing / application -----------------
-    def _discover_pak_groups(
-        self, tree: mobase.IFileTree
-    ) -> tuple[list[PakGroup], list[mobase.FileTreeEntry], list[mobase.FileTreeEntry]]:
-        """Walk the whole tree to find pak groups (a .pak plus its
-        same-directory same-stem .utoc/.ucas companions).
+    # --- recognizer integration ---------------------------------------------
 
-        Sibling ``AnimJSON``/``SwapJSON`` dirs at the archive root and
-        loose ``.json`` files at the archive root are returned alongside;
-        they're root-scope-only and associate with root-level groups.
-
-        Returns: (groups, root_json_dirs, root_loose_jsons).
-        """
-        # Group pak/companion entries by their parent directory + stem so
-        # a stem appearing in two different dirs becomes two groups.
-        bucketed: dict[tuple[int, str], list[mobase.FileTreeEntry]] = {}
-        root_json_dirs: list[mobase.FileTreeEntry] = []
-        root_loose_jsons: list[mobase.FileTreeEntry] = []
+    def _build_walk_context(
+        self,
+        tree: mobase.IFileTree,
+        platform: str,
+        suggested_mod_name: str,
+    ) -> WalkContext:
+        """Single ``tree.walk()`` pass that populates every signal
+        recognizers need. Runs after all pre-passes (platform resolution,
+        wrapper stripping, prearranged layout promotion)."""
+        has_fomod = False
+        has_ue4ss_dll = False
+        pak_entries: list[mobase.FileTreeEntry] = []
+        companion_entries: list[mobase.FileTreeEntry] = []
+        lua_entries: list[mobase.FileTreeEntry] = []
+        json_entries: list[mobase.FileTreeEntry] = []
+        json_dirs: list[mobase.FileTreeEntry] = []
+        folder_names: set[str] = set()
 
         def visit(
-            _path: str, entry: mobase.FileTreeEntry
+            path: str, entry: mobase.FileTreeEntry
         ) -> mobase.IFileTree.WalkReturn:
+            nonlocal has_fomod, has_ue4ss_dll
             parent = entry.parent()
             at_root = parent is None or parent is tree
-            if entry.isFile():
-                suffix = _suffix(entry)
-                if suffix in _PAK_COMPANION_SUFFIXES:
-                    stem = entry.name()[: -(len(suffix) + 1)]
-                    parent_key = id(parent) if parent is not None else id(tree)
-                    bucketed.setdefault((parent_key, stem), []).append(entry)
-                elif suffix == "json" and at_root:
-                    root_loose_jsons.append(entry)
-            elif (
-                entry.isDir()
-                and at_root
-                and entry.name().lower() in _ANIM_SWAP_FOLDERS
-            ):
-                root_json_dirs.append(entry)
+
+            if entry.isDir() and at_root:
+                folder_names.add(entry.name().lower())
+                if entry.name().lower() in _ANIM_SWAP_FOLDERS:
+                    json_dirs.append(entry)
+                return mobase.IFileTree.WalkReturn.CONTINUE
+
+            if not entry.isFile():
+                return mobase.IFileTree.WalkReturn.CONTINUE
+
+            lower = entry.name().lower()
+            s = suffix(entry)
+
+            if lower == "moduleconfig.xml" and path.lower().endswith("fomod"):
+                has_fomod = True
+            elif lower == "ue4ss.dll":
+                has_ue4ss_dll = True
+            elif s == "pak":
+                pak_entries.append(entry)
+            elif s in ("utoc", "ucas"):
+                companion_entries.append(entry)
+            elif lower == "main.lua":
+                lua_entries.append(entry)
+            elif s == "json" and at_root:
+                json_entries.append(entry)
+
             return mobase.IFileTree.WalkReturn.CONTINUE
 
         tree.walk(visit)
 
-        groups: list[PakGroup] = []
-        for (_parent_key, stem), entries in bucketed.items():
-            pak = next((e for e in entries if _suffix(e) == "pak"), None)
-            if pak is None:
-                # Orphaned .utoc / .ucas without a .pak -- skip; the
-                # cleanup pass disposes of them.
-                continue
-            companions = [e for e in entries if e is not pak]
-            parent_path = self._entry_parent_path(pak, tree)
-            is_at_root = parent_path == ""
-            groups.append(
-                PakGroup(
-                    group_id=f"{parent_path}/{pak.name()}".lstrip("/"),
-                    stem=stem,
-                    pak=pak,
-                    companions=companions,
-                    json_dirs=list(root_json_dirs) if is_at_root else [],
-                    current_parent_path=parent_path,
-                )
-            )
-        return groups, root_json_dirs, root_loose_jsons
+        return WalkContext(
+            has_fomod=has_fomod,
+            has_ue4ss_dll=has_ue4ss_dll,
+            pak_entries=tuple(pak_entries),
+            companion_entries=tuple(companion_entries),
+            lua_entries=tuple(lua_entries),
+            json_entries=tuple(json_entries),
+            json_dirs=tuple(json_dirs),
+            folder_names=frozenset(folder_names),
+            platform=platform,
+            suggested_mod_name=suggested_mod_name,
+        )
 
-    def _compute_pak_routing(self, groups: list[PakGroup]) -> dict[str, str]:
-        """SINGLE SOURCE OF TRUTH for default pak-routing decisions.
-
-        Consumed by both the silent-install path and the dialog's default
-        seeding code -- there is no parallel default table elsewhere.
-        Returns a {group_id: destination} dict.
-
-        For a group at the archive root the M1 heuristics from
-        ``.claude/tasks/m1-implementation-notes.md`` apply:
-          - Group has sibling AnimJSON/SwapJSON dirs at root → ~mods
-          - Else stem ends with _P                           → ~mods
-          - Else                                             → LogicMods
-
-        For a pre-arranged group (already placed under some directory)
-        the parent path is normalised to a known preset where possible:
-        ``LogicMods`` / ``~Mods`` / ``Content/Paks/<dest>`` map to their
-        canonical destination; anything else passes through verbatim and
-        is rendered as a Custom path in the dialog.
-        """
+    @staticmethod
+    def _build_decisions(
+        discovery: DiscoveryResult,
+        pak_overrides: dict[str, str] | None = None,
+        script_overrides: list[str] | None = None,
+        mod_name: str = "",
+    ) -> dict[str, str]:
+        """Merge default routing with dialog overrides into the flat
+        ``decisions`` dict that recognizers consume in ``route()``."""
         decisions: dict[str, str] = {}
-        for g in groups:
-            normalized = g.current_parent_path.strip().strip("/").lower()
-            if normalized.startswith("content/paks/"):
-                normalized = normalized[len("content/paks/"):]
 
-            if normalized == "":
-                if g.json_dirs:
-                    decisions[g.group_id] = "~mods"
-                elif g.stem.endswith("_P"):
-                    decisions[g.group_id] = "~mods"
-                else:
-                    decisions[g.group_id] = "LogicMods"
-            elif normalized == "logicmods":
-                decisions[g.group_id] = "LogicMods"
-            elif normalized == "~mods":
-                decisions[g.group_id] = "~mods"
+        if discovery.pak_groups:
+            if pak_overrides is not None:
+                decisions.update(pak_overrides)
             else:
-                decisions[g.group_id] = g.current_parent_path
+                decisions.update(discovery.default_routing)
+
+        if discovery.scripts:
+            if script_overrides is not None:
+                for i, status in enumerate(script_overrides):
+                    decisions[f"script_{i}"] = status
+            else:
+                for i in range(len(discovery.scripts)):
+                    decisions[f"script_{i}"] = "INSTALL"
+            decisions["__mod_name__"] = mod_name
+
         return decisions
-
-    def _apply_pak_routing(
-        self,
-        tree: mobase.IFileTree,
-        groups: list[PakGroup],
-        decisions: dict[str, str],
-        json_dirs: list[mobase.FileTreeEntry],
-        loose_jsons: list[mobase.FileTreeEntry],
-    ) -> None:
-        """Apply pak-routing decisions group-aware: SKIP removes pak +
-        .utoc / .ucas + (when every associated group is SKIP) the JSON
-        dirs. Custom paths land at the typed string under archive root,
-        no implicit Content/Paks prefix.
-
-        Moves are absolute-path so groups already inside a destination
-        directory (pre-arranged content) stay put on identity moves.
-        """
-        skipped_group_ids: set[str] = set()
-
-        for g in groups:
-            decision = decisions.get(g.group_id, "LogicMods")
-            members = [g.pak, *g.companions]
-
-            if decision == "SKIP":
-                # Capture into a list before iterating per docs/mod-organizer.md §15.
-                for entry in list(members):
-                    tree.remove(entry)
-                skipped_group_ids.add(g.group_id)
-            elif decision == "ROOT":
-                for entry in list(members):
-                    self._move_to(tree, entry, entry.name())
-            else:
-                dest_path = self._resolve_pak_dest_path(decision)
-                if not dest_path:
-                    # Empty Custom path: leave in place and let the final
-                    # cleanup pass deal with it.
-                    continue
-                dest = tree.addDirectory(dest_path)
-                target_dir = dest.path("/")
-                for entry in list(members):
-                    self._move_to(tree, entry, f"{target_dir}/{entry.name()}")
-
-        self._route_associated_json_dirs(
-            tree, groups, decisions, json_dirs, skipped_group_ids
-        )
-
-        for entry in loose_jsons:
-            dest = tree.addDirectory("Content/Paks/LogicMods")
-            self._move_to(tree, entry, f"{dest.path('/')}/{entry.name()}")
-
-    def _format_pak_label(self, g: PakGroup) -> str:
-        """Dialog row label: filename, plus a parent-path hint when the
-        pak is pre-arranged inside an existing directory."""
-        if g.current_parent_path:
-            return f"{g.pak.name()}  ({g.current_parent_path}/)"
-        return g.pak.name()
-
-    def _move_to(
-        self,
-        tree: mobase.IFileTree,
-        entry: mobase.FileTreeEntry,
-        target: str,
-    ) -> None:
-        """Move ``entry`` to absolute path ``target`` unless it's already
-        there (some IFileTree implementations balk at self-moves)."""
-        current_parent = self._entry_parent_path(entry, tree)
-        current = (
-            entry.name() if current_parent == ""
-            else f"{current_parent}/{entry.name()}"
-        )
-        if current == target.lstrip("/"):
-            return
-        tree.move(entry, target, policy=mobase.IFileTree.InsertPolicy.REPLACE)
-
-    def _resolve_pak_dest_path(self, decision: str) -> str:
-        """Map a non-SKIP, non-ROOT decision to a destination path.
-
-        Preset values map to fixed Content/Paks/<dest>/. Anything else is
-        treated as a Custom path and used verbatim under the archive root.
-        """
-        if decision == "~mods":
-            return "Content/Paks/~mods"
-        if decision == "LogicMods":
-            return "Content/Paks/LogicMods"
-        return decision
-
-    def _route_associated_json_dirs(
-        self,
-        tree: mobase.IFileTree,
-        groups: list[PakGroup],
-        decisions: dict[str, str],
-        json_dirs: list[mobase.FileTreeEntry],
-        skipped_group_ids: set[str],
-    ) -> None:
-        if not json_dirs:
-            return
-
-        # Only root-level groups own these dirs. If every root-level group
-        # was SKIPped, drop the JSON dirs too (group-aware SKIP, AC §9.i).
-        root_groups = [g for g in groups if g.current_parent_path == ""]
-        if root_groups and all(
-            g.group_id in skipped_group_ids for g in root_groups
-        ):
-            for entry in list(json_dirs):
-                tree.remove(entry)
-            return
-
-        # If exactly one non-SKIP root-level group survives and it has a
-        # Custom destination, JSON dirs follow it (AC §9.iii). Otherwise
-        # the M1 default applies: ~mods (MERGE).
-        target_dest_path = "Content/Paks/~mods"
-        surviving = [
-            g for g in root_groups if g.group_id not in skipped_group_ids
-        ]
-        if len(surviving) == 1:
-            decision = decisions.get(surviving[0].group_id, "LogicMods")
-            if decision not in PAK_PRESETS and decision != "SKIP":
-                resolved = self._resolve_pak_dest_path(decision)
-                if resolved:
-                    target_dest_path = resolved
-
-        for entry in list(json_dirs):
-            target_name = (
-                "AnimJSON" if entry.name().lower() == "animjson" else "SwapJSON"
-            )
-            parent = tree.addDirectory(target_dest_path)
-            tree.move(
-                entry,
-                f"{parent.path('/')}/{target_name}",
-                policy=mobase.IFileTree.InsertPolicy.MERGE,
-            )
-
-    # --- M3: dialog gating -----------------------------------------------
-    def _should_show_dialog(
-        self,
-        groups: list[PakGroup],
-        decisions: dict[str, str],
-        scripts: list[ScriptMod],
-    ) -> bool:
-        """Skip-when-trivial predicate (AC §6 / docs/rebuild.md §"Install
-        configuration dialog").
-
-        Show the dialog when any of the following hold:
-
-        1. More than one pak group is present.
-        2. Any detected script's ``<modname>`` derivation is ambiguous.
-        3. Any pak group's heuristic destination is a Custom path -- i.e.
-           the routing SSOT returned a value outside the preset set
-           (``ROOT`` / ``~mods`` / ``LogicMods``) and not ``SKIP``. The
-           user must confirm Custom destinations even when the rest of
-           the archive is otherwise trivial; ``UnifiedUI`` pre-fills the
-           Custom line edit with the layout-derived path so accepting
-           unchanged matches what the silent path would have done.
-
-        Otherwise the silent-install path applies the M1 heuristics
-        directly.
-        """
-        if len(groups) > 1:
-            return True
-        if any(s.ambiguous for s in scripts):
-            return True
-        for g in groups:
-            decision = decisions.get(g.group_id)
-            if (
-                decision is not None
-                and decision != "SKIP"
-                and decision not in PAK_PRESETS
-            ):
-                return True
-        return False
 
     def _compute_allowed_root_names(
         self,
-        groups: list[PakGroup],
+        discovery: DiscoveryResult,
         decisions: dict[str, str],
     ) -> set[str]:
         """Names (lowercased) that survive the post-routing root cleanup.
@@ -996,7 +587,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         a Custom path, the first path segment of that custom path.
         """
         allowed: set[str] = {"content", "binaries"}
-        for g in groups:
+        for g in discovery.pak_groups:
             decision = decisions.get(g.group_id, "LogicMods")
             if decision == "SKIP":
                 continue
@@ -1016,23 +607,22 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         return allowed
 
     def _log_silent_install(
-        self,
-        groups: list[PakGroup],
-        pak_decisions: dict[str, str],
-        scripts: list[ScriptMod],
+        self, discovery: DiscoveryResult, mod_name: str
     ) -> None:
-        """Single info-level log line for the silent-install branch (Q5)."""
+        """Single info-level log line for the silent-install branch."""
         parts = [
-            f"{g.group_id} → {pak_decisions.get(g.group_id, 'LogicMods')}"
-            for g in groups
+            f"{g.group_id} → "
+            f"{discovery.default_routing.get(g.group_id, 'LogicMods')}"
+            for g in discovery.pak_groups
         ]
         parts.extend(
-            f"{s.derived_name}/Scripts/main.lua → INSTALL" for s in scripts
+            f"{s.derived_name}/Scripts/main.lua → INSTALL"
+            for s in discovery.scripts
         )
         summary = "; ".join(parts) if parts else "no installable content"
         log.info(
             f"PalworldInstaller: silent install (skip-when-trivial predicate "
-            f"passed): {summary}"
+            f"passed) for {mod_name}: {summary}"
         )
 
     def _tree_post_install_state(
@@ -1047,7 +637,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             _path: str, entry: mobase.FileTreeEntry
         ) -> mobase.IFileTree.WalkReturn:
             if entry.isFile():
-                if not found["pak"] and _suffix(entry) == "pak":
+                if not found["pak"] and suffix(entry) == "pak":
                     found["pak"] = True
                 elif not found["lua"] and entry.name().lower() == "main.lua":
                     found["lua"] = True

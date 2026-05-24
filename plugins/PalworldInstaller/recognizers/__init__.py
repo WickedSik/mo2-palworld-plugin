@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+from ._base import ModRecognizer
+from .logicmods_json import LogicModsJsonRecognizer
+from .lua_script import LuaScriptRecognizer
+from .noop import NoopRecognizer
+from .pak import PakRecognizer
+from .ue4ss import Ue4ssSkipRecognizer
+
+RECOGNIZERS: list[ModRecognizer] = [
+    Ue4ssSkipRecognizer(),
+    LuaScriptRecognizer(),
+    PakRecognizer(),
+    LogicModsJsonRecognizer(),
+    NoopRecognizer(),
+]
+
+RECOGNIZERS.sort(key=lambda r: r.priority)
+
+_names = [r.name for r in RECOGNIZERS]
+if len(_names) != len(set(_names)):
+    _dupes = [n for n in _names if _names.count(n) > 1]
+    raise RuntimeError(
+        f"Duplicate recognizer names in registry: {sorted(set(_dupes))}"
+    )
