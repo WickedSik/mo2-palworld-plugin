@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installer now claims `.json`-only and UE4SS plugin archives (previously only `.pak`/`.lua` were claimed).
 
 ### Changed
+- Install dialog now shows a routing summary when a recognizer fully claims all files (e.g. Altermatic), so `force_dialog` no longer produces an empty body.
 - Refactored installer into a prioritized recognizer plugin architecture (M6); no user-facing behavior changes.
 
 ## [0.4.0] - 2026-05-04

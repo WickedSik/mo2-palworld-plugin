@@ -346,7 +346,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     for s in discovery.scripts
                 ]
                 dlg = UnifiedUI(
-                    self._parent, str(name), script_rows, pak_rows, platform
+                    self._parent, str(name), script_rows, pak_rows, platform,
+                    routing_summary=discovery.routing_summary or None,
                 )
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     return mobase.InstallResult.CANCELED

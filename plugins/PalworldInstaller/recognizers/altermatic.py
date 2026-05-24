@@ -44,9 +44,11 @@ class AltermaticRecognizer:
         self, tree: mobase.IFileTree, ctx: WalkContext
     ) -> DiscoveryResult:
         claimed = self._collect_claimed_paths(tree, ctx)
+        summary = self._build_routing_summary(tree, ctx)
         return DiscoveryResult(
             claimed_paths=claimed,
             should_show_dialog=False,
+            routing_summary=summary,
         )
 
     def route(
@@ -105,6 +107,31 @@ class AltermaticRecognizer:
                 f"{parent.path('/')}/{canonical_name}",
                 policy=mobase.IFileTree.InsertPolicy.MERGE,
             )
+
+    def _build_routing_summary(
+        self, tree: mobase.IFileTree, ctx: WalkContext
+    ) -> list[str]:
+        lines: list[str] = []
+        groups = self._build_pak_groups(ctx, tree)
+        for stem, entries in groups.items():
+            if stem.endswith("_P"):
+                dest = "Content/Paks/~mods/"
+            else:
+                dest = "Content/Paks/LogicMods/"
+            names = ", ".join(e.name() for e in entries)
+            lines.append(f"{names} → {dest}")
+
+        marker_dirs = self._find_marker_dirs(tree)
+        for marker_dir in marker_dirs:
+            canonical = (
+                "AnimJSON"
+                if marker_dir.name().lower() == "animjson"
+                else "SwapJSON"
+            )
+            lines.append(
+                f"{marker_dir.name()}/ → Content/Paks/~mods/{canonical}/"
+            )
+        return lines
 
     @staticmethod
     def _build_pak_groups(

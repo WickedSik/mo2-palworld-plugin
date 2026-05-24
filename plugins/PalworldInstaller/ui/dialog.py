@@ -79,6 +79,7 @@ class UnifiedUI(QDialog):
         script_rows: List[Tuple[str, str, bool]],
         pak_rows: List[Tuple[str, str, str]],
         platform: str,
+        routing_summary: List[str] | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Palworld Mod Installer")
@@ -119,6 +120,14 @@ class UnifiedUI(QDialog):
         body_widget = QWidget()
         body_layout = QVBoxLayout(body_widget)
         body_layout.setContentsMargins(0, 0, 0, 0)
+
+        # --- Routing summary (when recognizer fully claims all files) ------
+        if routing_summary:
+            summary_group = QGroupBox("Installation routing")
+            summary_layout = QVBoxLayout(summary_group)
+            for line in routing_summary:
+                summary_layout.addWidget(QLabel(line))
+            body_layout.addWidget(summary_group)
 
         # --- Section 2: Script mods --------------------------------------
         self._script_checkboxes: list[QCheckBox] = []

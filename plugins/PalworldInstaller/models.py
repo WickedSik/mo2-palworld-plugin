@@ -204,3 +204,4 @@ class DiscoveryResult:
     scripts: list[ScriptMod] = field(default_factory=list)
     claimed_paths: set[str] = field(default_factory=set)
     should_show_dialog: bool = False
+    routing_summary: list[str] = field(default_factory=list)
