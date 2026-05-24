@@ -351,7 +351,11 @@ class IOrganizer:
 # Base class stub
 # ---------------------------------------------------------------------------
 
-class IPluginInstallerSimple:
+class IPlugin:
+    pass
+
+
+class IPluginInstallerSimple(IPlugin):
     def __init__(self):
         pass
 
