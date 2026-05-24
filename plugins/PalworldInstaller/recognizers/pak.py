@@ -32,7 +32,7 @@ class PakRecognizer:
     """
 
     name = "pak"
-    priority = 60
+    priority = 100
 
     def detect(
         self, tree: mobase.IFileTree, ctx: WalkContext
