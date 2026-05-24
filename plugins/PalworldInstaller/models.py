@@ -153,7 +153,7 @@ class WalkContext:
     has_fomod: bool
     has_ue4ss_dll: bool
     has_json_deep: bool
-    has_ue4ss_plugin_layout: bool
+    dll_entries: tuple[mobase.FileTreeEntry, ...]
     pak_entries: tuple[mobase.FileTreeEntry, ...]
     companion_entries: tuple[mobase.FileTreeEntry, ...]
     lua_entries: tuple[mobase.FileTreeEntry, ...]

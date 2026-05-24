@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 import mobase
 
@@ -8,9 +9,14 @@ from ..models import (
     DiscoveryResult,
     RecognitionResult,
     WalkContext,
+    entry_full_path,
 )
 
 log = logging.getLogger(__name__)
+
+_UE4SS_PLUGIN_RE = re.compile(
+    r"ue4ss/mods/[^/]+/dlls/main\.dll$", re.IGNORECASE
+)
 
 
 class Ue4ssPluginRecognizer:
@@ -27,7 +33,10 @@ class Ue4ssPluginRecognizer:
     def detect(
         self, tree: mobase.IFileTree, ctx: WalkContext
     ) -> RecognitionResult:
-        if ctx.has_ue4ss_plugin_layout:
+        if any(
+            _UE4SS_PLUGIN_RE.search(entry_full_path(e, tree))
+            for e in ctx.dll_entries
+        ):
             return RecognitionResult.MATCH
         return RecognitionResult.NO_MATCH
 
@@ -46,8 +55,8 @@ class Ue4ssPluginRecognizer:
         decisions: dict[str, str],
     ) -> None:
         log.info(
-            f"PalworldInstaller: [ue4ss_plugin] pre-arranged UE4SS "
-            f"plugin layout accepted as-is"
+            "PalworldInstaller: [ue4ss_plugin] pre-arranged UE4SS "
+            "plugin layout accepted as-is"
         )
 
     @staticmethod

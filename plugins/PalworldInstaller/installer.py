@@ -191,7 +191,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             "pak": False,
             "lua": False,
             "json": False,
-            "ue4ss_plugin": False,
+            "dll": False,
         }
 
         def visit(path: str, entry: mobase.FileTreeEntry) -> mobase.IFileTree.WalkReturn:
@@ -207,13 +207,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     flags["lua"] = True
                 elif suffix(entry) == "json":
                     flags["json"] = True
-                elif lower == "main.dll":
-                    path_lower = path.lower().replace("\\", "/")
-                    if (
-                        "/ue4ss/mods/" in path_lower
-                        and path_lower.endswith("/dlls")
-                    ):
-                        flags["ue4ss_plugin"] = True
+                elif suffix(entry) == "dll":
+                    flags["dll"] = True
             return mobase.IFileTree.WalkReturn.CONTINUE
 
         tree.walk(visit)
@@ -233,12 +228,12 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             flags["pak"]
             or flags["lua"]
             or flags["json"]
-            or flags["ue4ss_plugin"]
+            or flags["dll"]
         )
         log.debug(
             f"PalworldInstaller: archive triage: "
             f"pak={flags['pak']} lua={flags['lua']} "
-            f"json={flags['json']} ue4ss_plugin={flags['ue4ss_plugin']}"
+            f"json={flags['json']} dll={flags['dll']}"
             f" -> {'claiming' if claimed else 'declining'}"
         )
         return claimed
@@ -267,8 +262,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 f"json={len(ctx.json_entries)} json_dirs={len(ctx.json_dirs)} "
                 f"companions={len(ctx.companion_entries)} "
                 f"fomod={ctx.has_fomod} ue4ss={ctx.has_ue4ss_dll} "
-                f"json_deep={ctx.has_json_deep} "
-                f"ue4ss_plugin={ctx.has_ue4ss_plugin_layout}"
+                f"dll={len(ctx.dll_entries)} "
+                f"json_deep={ctx.has_json_deep}"
             )
 
             active_recognizers = [
@@ -607,7 +602,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         has_fomod = False
         has_ue4ss_dll = False
         has_json_deep = False
-        has_ue4ss_plugin_layout = False
+        dll_entries: list[mobase.FileTreeEntry] = []
         pak_entries: list[mobase.FileTreeEntry] = []
         companion_entries: list[mobase.FileTreeEntry] = []
         lua_entries: list[mobase.FileTreeEntry] = []
@@ -620,7 +615,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             path: str, entry: mobase.FileTreeEntry
         ) -> mobase.IFileTree.WalkReturn:
             nonlocal has_fomod, has_ue4ss_dll
-            nonlocal has_json_deep, has_ue4ss_plugin_layout
+            nonlocal has_json_deep
             parent = entry.parent()
             at_root = parent is None or parent is tree
 
@@ -642,13 +637,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 has_fomod = True
             elif lower == "ue4ss.dll":
                 has_ue4ss_dll = True
-            elif lower == "main.dll":
-                path_lower = path.lower().replace("\\", "/")
-                if (
-                    "/ue4ss/mods/" in path_lower
-                    and path_lower.endswith("/dlls")
-                ):
-                    has_ue4ss_plugin_layout = True
+            elif s == "dll":
+                dll_entries.append(entry)
             elif s == "pak":
                 pak_entries.append(entry)
             elif s in ("utoc", "ucas"):
@@ -668,7 +658,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             has_fomod=has_fomod,
             has_ue4ss_dll=has_ue4ss_dll,
             has_json_deep=has_json_deep,
-            has_ue4ss_plugin_layout=has_ue4ss_plugin_layout,
+            dll_entries=tuple(dll_entries),
             pak_entries=tuple(pak_entries),
             companion_entries=tuple(companion_entries),
             lua_entries=tuple(lua_entries),

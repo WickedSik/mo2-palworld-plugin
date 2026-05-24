@@ -9,15 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Debug logging for better understanding what happens during an installation.
-- PalSchema mod recognition: detects `PalSchema/` folder at any depth and routes content to `Binaries/Win{64|GDK}/Mods/PalSchema/mods/<modname>/`.
-- Altermatic mod recognition: detects `AnimJSON/` or `SwapJSON/` folder markers; routes paks by `_P` suffix (`~mods` or `LogicMods`) and marker dirs to `~mods/{AnimJSON|SwapJSON}/`.
-- UE4SS plugin recognition: detects pre-arranged `ue4ss/Mods/<name>/dlls/main.dll` layouts (e.g. the PalSchema loader) and accepts them as-is.
+- PalSchema mod recognition (M7): detects `PalSchema/` folder at any depth and routes content to `Binaries/Win{64|GDK}/Mods/PalSchema/mods/<modname>/`.
+- Altermatic mod recognition (M7): detects `AnimJSON/` or `SwapJSON/` folder markers; routes paks by `_P` suffix (`~mods` or `LogicMods`) and marker dirs to `~mods/{AnimJSON|SwapJSON}/`.
+- UE4SS plugin recognition (M7): detects pre-arranged `ue4ss/Mods/<name>/dlls/main.dll` layouts (e.g. the PalSchema loader) and accepts them as-is.
 - Per-recognizer enable/disable settings (`recognizer.palschema.enabled`, `recognizer.altermatic.enabled`, `recognizer.ue4ss_plugin.enabled`).
 - Installer now claims `.json`-only and UE4SS plugin archives (previously only `.pak`/`.lua` were claimed).
 
 ### Changed
 - Install dialog now shows a routing summary when a recognizer fully claims all files (e.g. Altermatic), so `force_dialog` no longer produces an empty body.
 - Refactored installer into a prioritized recognizer plugin architecture (M6); no user-facing behavior changes.
+- Installer now fully separates concerns between installer and recognition, including DLL recognition (M7)
 
 ## [0.4.0] - 2026-05-04
 
