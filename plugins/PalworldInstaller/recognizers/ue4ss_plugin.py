@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import logging
+
+import mobase
+
+from ..models import (
+    DiscoveryResult,
+    RecognitionResult,
+    WalkContext,
+)
+
+log = logging.getLogger(__name__)
+
+
+class Ue4ssPluginRecognizer:
+    """Handles pre-arranged UE4SS plugin archives.
+
+    Detects the ``ue4ss/Mods/<name>/dlls/main.dll`` layout used by
+    UE4SS plugins (e.g. the PalSchema loader). The archive is already
+    in the correct game-relative structure, so routing is a no-op.
+    """
+
+    name = "ue4ss_plugin"
+    priority = 25
+
+    def detect(
+        self, tree: mobase.IFileTree, ctx: WalkContext
+    ) -> RecognitionResult:
+        if ctx.has_ue4ss_plugin_layout:
+            return RecognitionResult.MATCH
+        return RecognitionResult.NO_MATCH
+
+    def discover(
+        self, tree: mobase.IFileTree, ctx: WalkContext
+    ) -> DiscoveryResult:
+        return DiscoveryResult(
+            claimed_paths=self._collect_paths(tree),
+            should_show_dialog=False,
+        )
+
+    def route(
+        self,
+        tree: mobase.IFileTree,
+        ctx: WalkContext,
+        decisions: dict[str, str],
+    ) -> None:
+        log.info(
+            f"PalworldInstaller: [ue4ss_plugin] pre-arranged UE4SS "
+            f"plugin layout accepted as-is"
+        )
+
+    @staticmethod
+    def _collect_paths(tree: mobase.IFileTree) -> set[str]:
+        paths: set[str] = set()
+
+        def visit(
+            path: str, entry: mobase.FileTreeEntry
+        ) -> mobase.IFileTree.WalkReturn:
+            if entry.isFile():
+                full = f"{path}/{entry.name()}" if path else entry.name()
+                paths.add(full)
+            return mobase.IFileTree.WalkReturn.CONTINUE
+
+        tree.walk(visit)
+        return paths

@@ -152,12 +152,15 @@ class WalkContext:
 
     has_fomod: bool
     has_ue4ss_dll: bool
+    has_json_deep: bool
+    has_ue4ss_plugin_layout: bool
     pak_entries: tuple[mobase.FileTreeEntry, ...]
     companion_entries: tuple[mobase.FileTreeEntry, ...]
     lua_entries: tuple[mobase.FileTreeEntry, ...]
     json_entries: tuple[mobase.FileTreeEntry, ...]
     json_dirs: tuple[mobase.FileTreeEntry, ...]
     folder_names: frozenset[str]
+    deep_folder_names: frozenset[str]
     platform: str
     suggested_mod_name: str
 

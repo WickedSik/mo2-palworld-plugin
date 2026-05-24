@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from ._base import ModRecognizer
-from .logicmods_json import LogicModsJsonRecognizer
+from .altermatic import AltermaticRecognizer
 from .lua_script import LuaScriptRecognizer
 from .noop import NoopRecognizer
 from .pak import PakRecognizer
+from .palschema import PalSchemaRecognizer
 from .ue4ss import Ue4ssSkipRecognizer
+from .ue4ss_plugin import Ue4ssPluginRecognizer
 
 RECOGNIZERS: list[ModRecognizer] = [
     Ue4ssSkipRecognizer(),
+    Ue4ssPluginRecognizer(),
+    PalSchemaRecognizer(),
+    AltermaticRecognizer(),
     LuaScriptRecognizer(),
     PakRecognizer(),
-    LogicModsJsonRecognizer(),
     NoopRecognizer(),
 ]
 

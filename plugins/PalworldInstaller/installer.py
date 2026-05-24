@@ -139,6 +139,21 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 "steam",
             ),
             mobase.PluginSetting(
+                "recognizer.palschema.enabled",
+                "enable PalSchema mod detection and routing",
+                True,
+            ),
+            mobase.PluginSetting(
+                "recognizer.altermatic.enabled",
+                "enable Altermatic mod detection and routing",
+                True,
+            ),
+            mobase.PluginSetting(
+                "recognizer.ue4ss_plugin.enabled",
+                "enable UE4SS plugin detection and routing",
+                True,
+            ),
+            mobase.PluginSetting(
                 "force_dialog",
                 "debug: always show install dialog, even when the "
                 "skip-when-trivial predicate would bypass it",
@@ -170,7 +185,14 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         )
         fomod_enabled = self._organizer.isPluginEnabled("FOMOD Installer")
 
-        flags = {"fomod": False, "ue4ss": False, "pak": False, "lua": False}
+        flags = {
+            "fomod": False,
+            "ue4ss": False,
+            "pak": False,
+            "lua": False,
+            "json": False,
+            "ue4ss_plugin": False,
+        }
 
         def visit(path: str, entry: mobase.FileTreeEntry) -> mobase.IFileTree.WalkReturn:
             if entry.isFile():
@@ -183,6 +205,15 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     flags["pak"] = True
                 elif lower == "main.lua":
                     flags["lua"] = True
+                elif suffix(entry) == "json":
+                    flags["json"] = True
+                elif lower == "main.dll":
+                    path_lower = path.lower().replace("\\", "/")
+                    if (
+                        "/ue4ss/mods/" in path_lower
+                        and path_lower.endswith("/dlls")
+                    ):
+                        flags["ue4ss_plugin"] = True
             return mobase.IFileTree.WalkReturn.CONTINUE
 
         tree.walk(visit)
@@ -198,11 +229,17 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 "PalworldInstaller: declining: archive contains ue4ss.dll"
             )
             return False
-        claimed = flags["pak"] or flags["lua"]
+        claimed = (
+            flags["pak"]
+            or flags["lua"]
+            or flags["json"]
+            or flags["ue4ss_plugin"]
+        )
         log.debug(
             f"PalworldInstaller: archive triage: "
-            f"pak={flags['pak']} lua={flags['lua']} -> "
-            f"{'claiming' if claimed else 'declining'}"
+            f"pak={flags['pak']} lua={flags['lua']} "
+            f"json={flags['json']} ue4ss_plugin={flags['ue4ss_plugin']}"
+            f" -> {'claiming' if claimed else 'declining'}"
         )
         return claimed
 
@@ -229,13 +266,18 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 f"pak={len(ctx.pak_entries)} lua={len(ctx.lua_entries)} "
                 f"json={len(ctx.json_entries)} json_dirs={len(ctx.json_dirs)} "
                 f"companions={len(ctx.companion_entries)} "
-                f"fomod={ctx.has_fomod} ue4ss={ctx.has_ue4ss_dll}"
+                f"fomod={ctx.has_fomod} ue4ss={ctx.has_ue4ss_dll} "
+                f"json_deep={ctx.has_json_deep} "
+                f"ue4ss_plugin={ctx.has_ue4ss_plugin_layout}"
             )
 
-            # Gather-all: run detect() on every recognizer, then pick
-            # the highest-priority (lowest number) Match or RequestManual.
+            active_recognizers = [
+                r for r in RECOGNIZERS
+                if self._is_recognizer_enabled(r.name)
+            ]
+
             verdicts = [
-                (r, r.detect(tree, ctx)) for r in RECOGNIZERS
+                (r, r.detect(tree, ctx)) for r in active_recognizers
             ]
 
             for recognizer, verdict in verdicts:
@@ -251,13 +293,24 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
 
             winner = None
             winner_verdict = None
+            all_matches: list[str] = []
             for recognizer, verdict in verdicts:
                 if verdict == RecognitionResult.MATCH or isinstance(
                     verdict, RequestManual
                 ):
-                    winner = recognizer
-                    winner_verdict = verdict
-                    break
+                    all_matches.append(recognizer.name)
+                    if winner is None:
+                        winner = recognizer
+                        winner_verdict = verdict
+
+            if len(all_matches) > 1 and winner is not None:
+                losers = [n for n in all_matches if n != winner.name]
+                log.warning(
+                    f"PalworldInstaller: multiple recognizers matched "
+                    f"for {str(name)}: winner={winner.name} "
+                    f"(priority {winner.priority}), "
+                    f"also matched: {', '.join(losers)}"
+                )
 
             if winner is None:
                 return mobase.InstallResult.NOT_ATTEMPTED
@@ -340,11 +393,14 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             )
             return mobase.InstallResult.FAILED
         except Exception:
-            log.exception(f"PalworldInstaller: tree rewrite failed for {str(name)}")
+            log.exception(
+                f"PalworldInstaller: Automatic installation failed for "
+                f"{str(name)}. Manual installation may still be possible."
+            )
             return mobase.InstallResult.FAILED
 
-        has_pak, has_lua = self._tree_post_install_state(tree)
-        if not (has_pak or has_lua):
+        has_content = self._tree_has_installable_content(tree)
+        if not has_content:
             if had_markers:
                 log.error(
                     f"PalworldInstaller: Automatic installation failed: "
@@ -354,8 +410,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 )
                 return mobase.InstallResult.FAILED
             log.warning(
-                f"PalworldInstaller: no .pak or main.lua survived rewrite "
-                f"for {str(name)}; declining"
+                f"PalworldInstaller: no installable content survived "
+                f"rewrite for {str(name)}; declining"
             )
             return mobase.InstallResult.NOT_ATTEMPTED
 
@@ -549,24 +605,30 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         wrapper stripping, prearranged layout promotion)."""
         has_fomod = False
         has_ue4ss_dll = False
+        has_json_deep = False
+        has_ue4ss_plugin_layout = False
         pak_entries: list[mobase.FileTreeEntry] = []
         companion_entries: list[mobase.FileTreeEntry] = []
         lua_entries: list[mobase.FileTreeEntry] = []
         json_entries: list[mobase.FileTreeEntry] = []
         json_dirs: list[mobase.FileTreeEntry] = []
         folder_names: set[str] = set()
+        deep_folder_names: set[str] = set()
 
         def visit(
             path: str, entry: mobase.FileTreeEntry
         ) -> mobase.IFileTree.WalkReturn:
             nonlocal has_fomod, has_ue4ss_dll
+            nonlocal has_json_deep, has_ue4ss_plugin_layout
             parent = entry.parent()
             at_root = parent is None or parent is tree
 
-            if entry.isDir() and at_root:
-                folder_names.add(entry.name().lower())
-                if entry.name().lower() in _ANIM_SWAP_FOLDERS:
-                    json_dirs.append(entry)
+            if entry.isDir():
+                deep_folder_names.add(entry.name().lower())
+                if at_root:
+                    folder_names.add(entry.name().lower())
+                    if entry.name().lower() in _ANIM_SWAP_FOLDERS:
+                        json_dirs.append(entry)
                 return mobase.IFileTree.WalkReturn.CONTINUE
 
             if not entry.isFile():
@@ -579,14 +641,23 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 has_fomod = True
             elif lower == "ue4ss.dll":
                 has_ue4ss_dll = True
+            elif lower == "main.dll":
+                path_lower = path.lower().replace("\\", "/")
+                if (
+                    "/ue4ss/mods/" in path_lower
+                    and path_lower.endswith("/dlls")
+                ):
+                    has_ue4ss_plugin_layout = True
             elif s == "pak":
                 pak_entries.append(entry)
             elif s in ("utoc", "ucas"):
                 companion_entries.append(entry)
             elif lower == "main.lua":
                 lua_entries.append(entry)
-            elif s == "json" and at_root:
-                json_entries.append(entry)
+            elif s == "json":
+                has_json_deep = True
+                if at_root:
+                    json_entries.append(entry)
 
             return mobase.IFileTree.WalkReturn.CONTINUE
 
@@ -595,12 +666,15 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         return WalkContext(
             has_fomod=has_fomod,
             has_ue4ss_dll=has_ue4ss_dll,
+            has_json_deep=has_json_deep,
+            has_ue4ss_plugin_layout=has_ue4ss_plugin_layout,
             pak_entries=tuple(pak_entries),
             companion_entries=tuple(companion_entries),
             lua_entries=tuple(lua_entries),
             json_entries=tuple(json_entries),
             json_dirs=tuple(json_dirs),
             folder_names=frozenset(folder_names),
+            deep_folder_names=frozenset(deep_folder_names),
             platform=platform,
             suggested_mod_name=suggested_mod_name,
         )
@@ -683,29 +757,35 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             f"passed) for {mod_name}: {summary}"
         )
 
-    def _tree_post_install_state(
+    def _tree_has_installable_content(
         self, tree: mobase.IFileTree
-    ) -> tuple[bool, bool]:
-        """Single-walk validation: returns (has_pak, has_lua). Used to
-        decide whether the rewrite produced any installable content; stops
-        as soon as both have been seen."""
-        found = {"pak": False, "lua": False}
+    ) -> bool:
+        """Single-walk validation: returns True if any installable
+        content (.pak, main.lua, .json, or .dll) survived the rewrite.
+        Stops at the first find."""
+        found = [False]
 
         def visit(
             _path: str, entry: mobase.FileTreeEntry
         ) -> mobase.IFileTree.WalkReturn:
             if entry.isFile():
-                if not found["pak"] and suffix(entry) == "pak":
-                    found["pak"] = True
-                elif not found["lua"] and entry.name().lower() == "main.lua":
-                    found["lua"] = True
-                if found["pak"] and found["lua"]:
+                s = suffix(entry)
+                lower = entry.name().lower()
+                if s == "pak" or lower == "main.lua" or s == "json" or s == "dll":
+                    found[0] = True
                     return mobase.IFileTree.WalkReturn.STOP
             return mobase.IFileTree.WalkReturn.CONTINUE
 
         tree.walk(visit)
-        return found["pak"], found["lua"]
+        return found[0]
 
     # --- helper ----------------------------------------------------------
+    def _is_recognizer_enabled(self, recognizer_name: str) -> bool:
+        key = f"recognizer.{recognizer_name}.enabled"
+        val = self._organizer.pluginSetting(self.name(), key)
+        if val is None:
+            return True
+        return bool(val)
+
     def _tr(self, txt: str) -> str:
         return QCoreApplication.translate("PalworldInstaller", txt)
