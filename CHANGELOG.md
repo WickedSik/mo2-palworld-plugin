@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-24
+
 ### Added
 - Debug logging for better understanding what happens during an installation.
 - PalSchema mod recognition (M7): detects `PalSchema/` folder at any depth and routes content to `Binaries/Win{64|GDK}/Mods/PalSchema/mods/<modname>/`.
