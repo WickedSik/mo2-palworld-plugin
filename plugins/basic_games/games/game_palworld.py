@@ -13,7 +13,7 @@ from ..basic_game import BasicGame
 class PalworldGame(BasicGame):
     Name = "Palworld"
     Author = "WickedSik"
-    Version = "0.0.1"
+    Version = "0.4.0"
     Description = "Palworld installer with support for multi-platform packages"
     GameNexusId = 658
     GameSteamId = [1623730]
