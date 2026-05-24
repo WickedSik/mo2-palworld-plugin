@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import mobase
 
 from ..models import (
@@ -8,6 +10,8 @@ from ..models import (
     WalkContext,
     move_to,
 )
+
+log = logging.getLogger(__name__)
 
 
 class LogicModsJsonRecognizer:
@@ -42,5 +46,9 @@ class LogicModsJsonRecognizer:
         decisions: dict[str, str],
     ) -> None:
         for entry in ctx.json_entries:
+            log.info(
+                f"PalworldInstaller: [logicmods_json] routing "
+                f"{entry.name()} -> Content/Paks/LogicMods/"
+            )
             dest = tree.addDirectory("Content/Paks/LogicMods")
             move_to(tree, entry, f"{dest.path('/')}/{entry.name()}")

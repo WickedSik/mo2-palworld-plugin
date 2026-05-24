@@ -11,7 +11,7 @@ from ..basic_features.basic_save_game_info import BasicGameSaveGame
 from ..basic_game import BasicGame
 
 class PalworldGame(BasicGame):
-    Name = "Palworld Server"
+    Name = "Palworld Server Support Plugin"
     Author = "WickedSik"
     Version = "0.4.0"
     GameNexusId = 658

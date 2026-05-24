@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Debug logging for better understanding what happens during an installation.
+
 ### Changed
 - Refactored installer into a prioritized recognizer plugin architecture (M6); no user-facing behavior changes.
 

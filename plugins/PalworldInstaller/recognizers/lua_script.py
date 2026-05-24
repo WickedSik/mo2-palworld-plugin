@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import mobase
 
 from ..models import (
@@ -9,6 +11,9 @@ from ..models import (
     WalkContext,
     entry_full_path,
 )
+
+
+log = logging.getLogger(__name__)
 
 
 class LuaScriptRecognizer:
@@ -33,6 +38,13 @@ class LuaScriptRecognizer:
         self, tree: mobase.IFileTree, ctx: WalkContext
     ) -> DiscoveryResult:
         scripts = self._find_scripts(tree, ctx)
+
+        for s in scripts:
+            log.debug(
+                f"PalworldInstaller: [lua_script] found {s.main_lua_display} "
+                f"-> derived '{s.derived_name}' "
+                f"({'ambiguous' if s.ambiguous else 'unambiguous'})"
+            )
 
         claimed: set[str] = set()
         for s in scripts:
@@ -65,6 +77,10 @@ class LuaScriptRecognizer:
 
         for i, script in enumerate(scripts):
             status = decisions.get(f"script_{i}", "INSTALL")
+            log.info(
+                f"PalworldInstaller: [lua_script] "
+                f"{script.derived_name} -> {status}"
+            )
 
             if status == "SKIP":
                 if script.mod_dir is tree:

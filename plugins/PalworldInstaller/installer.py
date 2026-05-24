@@ -188,10 +188,23 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         tree.walk(visit)
 
         if flags["fomod"] and fomod_enabled and prefer_fomod:
+            log.debug(
+                f"PalworldInstaller: deferring to FOMOD installer "
+                f"for {game}"
+            )
             return False
         if flags["ue4ss"]:
+            log.debug(
+                "PalworldInstaller: declining: archive contains ue4ss.dll"
+            )
             return False
-        return flags["pak"] or flags["lua"]
+        claimed = flags["pak"] or flags["lua"]
+        log.debug(
+            f"PalworldInstaller: archive triage: "
+            f"pak={flags['pak']} lua={flags['lua']} -> "
+            f"{'claiming' if claimed else 'declining'}"
+        )
+        return claimed
 
     def install(
         self,
@@ -211,11 +224,31 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
 
             ctx = self._build_walk_context(tree, platform, str(name))
 
+            log.debug(
+                f"PalworldInstaller: WalkContext for {str(name)}: "
+                f"pak={len(ctx.pak_entries)} lua={len(ctx.lua_entries)} "
+                f"json={len(ctx.json_entries)} json_dirs={len(ctx.json_dirs)} "
+                f"companions={len(ctx.companion_entries)} "
+                f"fomod={ctx.has_fomod} ue4ss={ctx.has_ue4ss_dll}"
+            )
+
             # Gather-all: run detect() on every recognizer, then pick
             # the highest-priority (lowest number) Match or RequestManual.
             verdicts = [
                 (r, r.detect(tree, ctx)) for r in RECOGNIZERS
             ]
+
+            for recognizer, verdict in verdicts:
+                label = (
+                    verdict.reason
+                    if isinstance(verdict, RequestManual)
+                    else verdict.name
+                )
+                log.debug(
+                    f"PalworldInstaller: [{recognizer.name}] "
+                    f"(priority {recognizer.priority}) -> {label}"
+                )
+
             winner = None
             winner_verdict = None
             for recognizer, verdict in verdicts:
@@ -235,6 +268,11 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                     f"{winner_verdict.reason} for {str(name)}"
                 )
                 return mobase.InstallResult.NOT_ATTEMPTED
+
+            log.info(
+                f"PalworldInstaller: [{winner.name}] won detection "
+                f"for {str(name)} (priority {winner.priority})"
+            )
 
             discovery = winner.discover(tree, ctx)
 
@@ -279,6 +317,16 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             allowed_root = self._compute_allowed_root_names(
                 discovery, decisions
             )
+            removed_root = [
+                e.name() for e in tree
+                if e.name().lower() not in allowed_root
+            ]
+            if removed_root:
+                log.debug(
+                    f"PalworldInstaller: root cleanup: keeping "
+                    f"{sorted(allowed_root)}, removing "
+                    f"{sorted(removed_root)}"
+                )
             tree.removeIf(
                 lambda e: e.parent() is tree
                 and e.name().lower() not in allowed_root
@@ -352,6 +400,12 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             return False
 
         matching = self._select_matching_marker(markers, platform)
+        log.debug(
+            f"PalworldInstaller: found platform markers: "
+            f"{[e.name() for e in markers]}, "
+            f"selected {matching.name() if matching else 'none'} "
+            f"for platform {platform}"
+        )
         if matching is None:
             available = [_extract_marker_platform(e.name()) for e in markers]
             raise PlatformVariantMismatch(available, platform)
@@ -448,6 +502,10 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             )
             if source is None:
                 continue
+            log.debug(
+                f"PalworldInstaller: promoted root-level "
+                f"{source.name()}/ to {target_path}/"
+            )
             target = tree.addDirectory(target_path)
             for child in list(source):
                 tree.move(

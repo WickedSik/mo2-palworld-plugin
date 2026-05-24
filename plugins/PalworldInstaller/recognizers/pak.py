@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import mobase
 
 from ..models import (
@@ -13,6 +15,8 @@ from ..models import (
     suffix,
 )
 from ..presets import PAK_PRESETS
+
+log = logging.getLogger(__name__)
 
 _PAK_COMPANION_SUFFIXES = ("pak", "utoc", "ucas")
 _ANIM_SWAP_FOLDERS = ("animjson", "swapjson")
@@ -43,6 +47,16 @@ class PakRecognizer:
         groups, json_dirs, loose_jsons = self._build_pak_groups(tree, ctx)
         default_routing = self._compute_default_routing(groups)
 
+        log.debug(
+            f"PalworldInstaller: [pak] discovered {len(groups)} group(s), "
+            f"{len(json_dirs)} json dir(s), {len(loose_jsons)} loose json(s)"
+        )
+        for g in groups:
+            log.debug(
+                f"PalworldInstaller: [pak]   group {g.group_id} "
+                f"-> default {default_routing.get(g.group_id, '?')}"
+            )
+
         claimed: set[str] = set()
         for g in groups:
             claimed.add(g.group_id)
@@ -72,6 +86,13 @@ class PakRecognizer:
     ) -> None:
         groups, json_dirs, loose_jsons = self._build_pak_groups(tree, ctx)
         skipped_group_ids: set[str] = set()
+
+        for g in groups:
+            decision = decisions.get(g.group_id, "LogicMods")
+            log.info(
+                f"PalworldInstaller: [pak] routing {g.group_id} "
+                f"-> {decision}"
+            )
 
         for g in groups:
             decision = decisions.get(g.group_id, "LogicMods")
