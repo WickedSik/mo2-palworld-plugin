@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-13
+
 ### Added
 - UE4SS DLL plugins such as the PalSchema loader are now installed automatically. Previously they were left uninstalled.
 

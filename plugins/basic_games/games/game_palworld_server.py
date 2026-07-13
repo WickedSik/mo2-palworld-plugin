@@ -13,7 +13,7 @@ from ..basic_game import BasicGame
 class PalworldGame(BasicGame):
     Name = "Palworld Server Support Plugin"
     Author = "WickedSik"
-    Version = "0.5.0"
+    Version = "0.6.0"
     GameNexusId = 658
     GameSteamId = [2394010]
 

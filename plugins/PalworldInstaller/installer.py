@@ -110,7 +110,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         )
 
     def version(self) -> mobase.VersionInfo:
-        return mobase.VersionInfo(0, 5, 0, mobase.ReleaseType.PRE_ALPHA)
+        return mobase.VersionInfo(0, 6, 0, mobase.ReleaseType.PRE_ALPHA)
 
     def settings(self) -> List[mobase.PluginSetting]:
         return [
