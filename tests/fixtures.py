@@ -1,10 +1,11 @@
-"""Hardcoded test-mod directory structures derived from _assets/test-mods/.
+"""Fixed test-mod directory layouts taken from _assets/test-mods/.
 
-Each constant is a nested dict representing an archive layout. Keys ending
-with "/" are directories; all other keys are files. Values for files are
-the FILE sentinel; values for directories are nested dicts.
+Each constant is a nested dict that describes an archive layout. Keys that
+end with "/" are directories. Their values are nested dicts. All other keys
+are files. The value for a file is the FILE marker.
 
-Source: _assets/test-mods/ (gitignored — contains real multi-MB .pak binaries).
+Source: _assets/test-mods/. That folder is gitignored because it holds real
+multi-MB .pak binaries.
 Last synced: 2026-05-24.
 """
 from tests.mobase_mock import FILE

@@ -7,7 +7,7 @@ from plugins.PalworldInstaller.recognizers.pak import PakRecognizer
 
 
 def _build_ctx(tree, platform="steam"):
-    """Build a WalkContext by simulating the walk the installer does."""
+    """Build a WalkContext the same way the installer does when it walks the tree."""
     pak_entries = []
     companion_entries = []
     json_entries = []

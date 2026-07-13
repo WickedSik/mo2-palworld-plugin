@@ -1,10 +1,10 @@
 """DllPluginRecognizer detection and routing tests.
 
-Regression coverage for archetype E of the UE4SS-mods failure: the
-PalSchema loader (Nexus 2361) ships un-arranged as
-``PalSchema/dlls/main.dll`` and was previously claimed by no recognizer
-(NOT_ATTEMPTED). This recognizer arranges any root-level
-``<name>/dlls/main.dll`` UE4SS C++ plugin into ``ue4ss/Mods/<name>/``.
+These tests cover a past bug (archetype E of the UE4SS-mods failure).
+The PalSchema loader (Nexus 2361) ships as ``PalSchema/dlls/main.dll``
+with no set-up layout. No recognizer used to claim it (NOT_ATTEMPTED).
+This recognizer moves any root-level ``<name>/dlls/main.dll`` UE4SS C++
+plugin into ``ue4ss/Mods/<name>/``.
 """
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ class TestDllPluginRecognizerDetect:
         assert self.recognizer.detect(tree, ctx) == RecognitionResult.MATCH
 
     def test_ignores_prearranged_ue4ss_layout(self):
-        """The already-arranged ue4ss/Mods/<name>/dlls/main.dll layout
+        """The already set-up ue4ss/Mods/<name>/dlls/main.dll layout
         belongs to Ue4ssPluginRecognizer, not this one."""
         tree = build_tree({
             "ue4ss/": {
@@ -98,24 +98,24 @@ class TestDllPluginRecognizerRoute:
         assert tree.find(
             "Binaries/Win64/ue4ss/Mods/PalSchema/dlls/main.dll"
         ) is not None
-        # enabled.txt activation flag preserved...
+        # enabled.txt activation flag kept...
         assert tree.find(
             "Binaries/Win64/ue4ss/Mods/PalSchema/enabled.txt"
         ) is not None
-        # ...mods/ scaffold preserved...
+        # ...empty mods/ folder kept...
         assert tree.find(
             "Binaries/Win64/ue4ss/Mods/PalSchema/mods"
         ) is not None
-        # ...original root folder relocated (gone from root)...
+        # ...original root folder moved (gone from root)...
         assert tree.find("PalSchema") is None
-        # ...and NOT on the ue4ss-less path.
+        # ...and NOT on the path without ue4ss.
         assert tree.find(
             "Binaries/Win64/Mods/PalSchema/dlls/main.dll"
         ) is None
 
     def test_palschema_framework_xbox(self):
-        # NOTE: the WinGDK path is not yet verified against a real Game
-        # Pass install; this asserts internal consistency only.
+        # NOTE: the WinGDK path is not yet checked against a real Game
+        # Pass install. This only checks internal consistency.
         tree = _palschema_tree()
         ctx = _build_ctx(tree, platform="xbox")
         self.recognizer.route(tree, ctx, {})

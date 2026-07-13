@@ -18,12 +18,13 @@ log = logging.getLogger(__name__)
 
 
 class LuaScriptRecognizer:
-    """Handles archives containing UE4SS Lua script mods
+    """Handles archives that hold UE4SS Lua script mods
     (``<modname>/Scripts/main.lua``).
 
-    Routes scripts to ``Binaries/Win64/ue4ss/Mods/<modname>/`` (steam) or
-    ``Binaries/WinGDK/ue4ss/Mods/<modname>/`` (xbox) -- the directory the
-    UE4SS runtime scans. The ``ue4ss/`` segment is mandatory.
+    Routes scripts to the directory the UE4SS runtime scans:
+    ``Binaries/Win64/ue4ss/Mods/<modname>/`` (steam) or
+    ``Binaries/WinGDK/ue4ss/Mods/<modname>/`` (xbox). The ``ue4ss/``
+    segment is required.
     """
 
     name = "lua_script"
@@ -110,11 +111,11 @@ class LuaScriptRecognizer:
             ):
                 mod_dir_target = f"{base}/{target_modname}"
                 if entry_full_path(script.mod_dir, tree) == mod_dir_target:
-                    # Pre-arranged archive already at the canonical UE4SS
-                    # path (e.g. an archive shipping full
-                    # Binaries/Win64/ue4ss/Mods/<name>/). Moving it onto
-                    # itself is a no-op at best and a demotion risk at
-                    # worst -- leave it untouched.
+                    # Pre-arranged archive that already sits at the
+                    # expected UE4SS path (e.g. an archive that ships the
+                    # full Binaries/Win64/ue4ss/Mods/<name>/). Moving it
+                    # onto itself does nothing at best and could move it
+                    # to the wrong place at worst. Leave it untouched.
                     log.info(
                         f"PalworldInstaller: [lua_script] "
                         f"{target_modname} already in canonical UE4SS "

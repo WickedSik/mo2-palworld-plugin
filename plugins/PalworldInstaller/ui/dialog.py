@@ -1,23 +1,23 @@
 """UnifiedUI install dialog for PalworldInstaller (M3).
 
-Code review rules enforced in this file:
+Code review rules kept in this file:
 
-1. ONE SIGNAL, ONE SLOT. No Qt signal in this dialog connects to more than
-   one slot. Verified manually: each combo's currentTextChanged connects
-   only to the line-edit toggler for that row; the button box's accepted /
-   rejected each connect to exactly one slot.
+1. ONE SIGNAL, ONE SLOT. No Qt signal in this dialog connects to more
+   than one slot. Checked by hand: each combo's currentTextChanged
+   connects only to that row's line-edit toggler. The button box's
+   accepted and rejected each connect to exactly one slot.
 
-2. SINGLE RESOLUTION PATH for get_pak_locations(). Read combo first; if
-   'Custom', return the line-edit text; else return the combo text. No
-   fall-through to a default mid-resolution.
+2. SINGLE RESOLUTION PATH for get_pak_locations(). Read the combo first.
+   If it is 'Custom', return the line-edit text, else return the combo
+   text. No fall-through to a default partway through.
 
-3. SINGLE SOURCE OF TRUTH for routing heuristics is in installer.py
-   (_compute_pak_routing). This file does NOT encode any heuristic; it
-   accepts the default destinations as constructor input.
+3. SINGLE SOURCE OF TRUTH for the routing rules lives in installer.py
+   (_compute_pak_routing). This file holds no rules of its own. It takes
+   the default destinations as constructor input.
 
-4. GROUP-AWARE. Each pak row corresponds to one stem GROUP, not a single
-   file. The decisions returned here are stem -> destination; the installer
-   expands them across .pak + .utoc + .ucas + associated JSON dirs.
+4. GROUP-AWARE. Each pak row is one stem GROUP, not a single file. The
+   decisions returned here are stem -> destination. The installer
+   applies them across .pak + .utoc + .ucas + linked JSON dirs.
 """
 from __future__ import annotations
 
@@ -47,29 +47,31 @@ class UnifiedUI(QDialog):
     """Three-section install dialog for Palworld archives.
 
     Sections:
-      1. Mod name      -- editable QComboBox seeded with the suggested name
-                          and any derived <modname>s from script paths.
+      1. Mod name      -- editable QComboBox filled with the suggested
+                          name and any <modname>s derived from script
+                          paths.
       2. Script mods   -- one QCheckBox per detected main.lua. Checked by
-                          default when derivation is unambiguous.
-      3. Pak groups    -- one row per .pak stem group. Label + destination
-                          combo (ROOT / ~mods / LogicMods / Custom / SKIP)
-                          + custom-path QLineEdit (enabled only on Custom).
+                          default when the name is clear.
+      3. Pak groups    -- one row per .pak stem group. Label +
+                          destination combo (ROOT / ~mods / LogicMods /
+                          Custom / SKIP) + custom-path QLineEdit (enabled
+                          only for Custom).
 
-    Public API (positional alignment with constructor inputs):
+    Public API (same order as the constructor inputs):
       - get_new_mod_name()    -> str
       - get_script_statuses() -> list[str]   ('INSTALL' or 'SKIP')
       - get_pak_locations()   -> dict[group_id, str]
 
-    Pak rows are 3-tuples ``(group_id, default_destination, display_label)``.
-    A ``default_destination`` that is one of ``ROOT`` / ``~mods`` /
-    ``LogicMods`` selects the matching combo entry; anything else (a
-    pre-arranged custom path supplied by the SSOT) flips the combo to
+    Pak rows are 3-tuples ``(group_id, default_destination,
+    display_label)``. A ``default_destination`` of ``ROOT`` / ``~mods``
+    / ``LogicMods`` selects the matching combo entry. Anything else (a
+    prearranged custom path from the installer) flips the combo to
     ``Custom`` and pre-fills the line edit with that string.
 
-    A read-only platform indicator at the top of the dialog shows the
+    A read-only platform label at the top of the dialog shows the
     resolved platform from PluginSetting (``steam`` or ``xbox``). Per Q1
-    in docs/rebuild.md §6, the dialog never offers a per-install override:
-    platform is global per managed game.
+    in docs/rebuild.md §6, the dialog never offers a per-install
+    override. Platform is global per managed game.
     """
 
     def __init__(
@@ -88,10 +90,10 @@ class UnifiedUI(QDialog):
         layout = QVBoxLayout(self)
 
         # --- Platform indicator (read-only) ------------------------------
-        # Surfaces the resolved platform from PluginSetting so the user can
-        # see which variant the installer will route to. Read-only by design
-        # (Q1 resolution): per-install overrides would conflict with the
-        # "global per managed game" principle in §5 of docs/rebuild.md.
+        # Shows the resolved platform from PluginSetting so the user can
+        # see which variant the installer will route to. Read-only by
+        # design (Q1 resolution). A per-install override would clash with
+        # the "global per managed game" rule in §5 of docs/rebuild.md.
         platform_label = QLabel(
             f"<b>Platform:</b> {platform.capitalize()} <i>(from settings)</i>"
         )
@@ -113,10 +115,11 @@ class UnifiedUI(QDialog):
         layout.addWidget(name_group)
 
         # --- Scrollable body (sections 2 + 3) ----------------------------
-        # Sections 2 and 3 grow with archive contents and can overflow the
-        # screen on mods with many scripts or pak groups. The platform label,
-        # mod-name combo, and button box stay outside the scroll area so the
-        # OK/Cancel buttons and primary context remain visible at all times.
+        # Sections 2 and 3 grow with the archive contents. They can run
+        # off the screen on mods with many scripts or pak groups. The
+        # platform label, mod-name combo, and button box stay outside the
+        # scroll area so the OK/Cancel buttons and main context stay
+        # visible at all times.
         body_widget = QWidget()
         body_layout = QVBoxLayout(body_widget)
         body_layout.setContentsMargins(0, 0, 0, 0)
@@ -160,8 +163,9 @@ class UnifiedUI(QDialog):
                 line_edit = QLineEdit()
                 line_edit.setPlaceholderText("custom/path/under/archive/root")
 
-                # Resolve the default: a preset selects the combo entry;
-                # anything else flips to Custom and pre-fills the line edit.
+                # Resolve the default. A preset selects the combo entry.
+                # Anything else flips to Custom and pre-fills the line
+                # edit.
                 preset_idx = combo.findText(default_dest)
                 if preset_idx >= 0:
                     combo.setCurrentIndex(preset_idx)
@@ -173,8 +177,9 @@ class UnifiedUI(QDialog):
                 row_layout.addWidget(combo)
                 row_layout.addWidget(line_edit, 1)
 
-                # Rule 1: ONE SIGNAL, ONE SLOT. The combo's currentTextChanged
-                # has exactly one listener -- the per-row line-edit toggler.
+                # Rule 1: ONE SIGNAL, ONE SLOT. The combo's
+                # currentTextChanged has exactly one listener, the
+                # per-row line-edit toggler.
                 combo.currentTextChanged.connect(
                     lambda value, le=line_edit: le.setEnabled(value == "Custom")
                 )
@@ -213,9 +218,10 @@ class UnifiedUI(QDialog):
         ]
 
     def get_pak_locations(self) -> dict[str, str]:
-        # Rule 2: SINGLE RESOLUTION PATH. Combo first; if 'Custom', return
-        # line-edit text; else return combo text. No fall-through. Keys
-        # are group_ids -- the unique pak path supplied at construction.
+        # Rule 2: SINGLE RESOLUTION PATH. Combo first. If 'Custom',
+        # return the line-edit text, else return the combo text. No
+        # fall-through. Keys are group_ids, the unique pak path passed in
+        # at construction.
         out: dict[str, str] = {}
         for group_id, (combo, line_edit) in self._pak_rows.items():
             value = combo.currentText()

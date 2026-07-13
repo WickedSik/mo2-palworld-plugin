@@ -50,7 +50,7 @@ class TestPalSchemaRecognizerRoute:
         assert tree.find(
             "Binaries/Win64/ue4ss/Mods/PalSchema/mods/MyMod/schema.json"
         ) is not None
-        # Regression: must NOT land on the ue4ss-less path (M8 defect).
+        # Old bug (M8): it must NOT land on the path that has no ue4ss folder.
         assert tree.find(
             "Binaries/Win64/Mods/PalSchema/mods/MyMod/schema.json"
         ) is None

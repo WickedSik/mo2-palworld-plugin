@@ -1,4 +1,4 @@
-"""AC 5.3 — Prearranged layout promotion integration tests."""
+"""AC 5.3 — Tests that an already-arranged layout is moved up to the right place."""
 from __future__ import annotations
 
 import pytest

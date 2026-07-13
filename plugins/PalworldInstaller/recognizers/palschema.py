@@ -19,8 +19,8 @@ log = logging.getLogger(__name__)
 class PalSchemaRecognizer:
     """Handles PalSchema mod archives.
 
-    Detects archives containing a ``PalSchema/`` folder (at any depth)
-    with JSON schema files. Routes content to the PalSchema mods
+    Detects archives that hold a ``PalSchema/`` folder (at any depth)
+    with JSON schema files. Routes the content to the PalSchema mods
     directory under the UE4SS runtime:
     ``Binaries/Win{64|GDK}/ue4ss/Mods/PalSchema/mods/<modname>/``.
     """
@@ -85,8 +85,8 @@ class PalSchemaRecognizer:
         mod_folders: list[mobase.FileTreeEntry],
         mods_base: str,
     ) -> None:
-        """Route when archive has PalSchema/mods/<modname>/ structure.
-        Each subfolder under mods/ is a separate mod."""
+        """Route when the archive has a PalSchema/mods/<modname>/
+        structure. Each subfolder under mods/ is a separate mod."""
         for mod_folder in mod_folders:
             modname = mod_folder.name()
             dest_base = (
@@ -123,8 +123,8 @@ class PalSchemaRecognizer:
         mods_base: str,
         ctx: WalkContext,
     ) -> None:
-        """Route when content is flat (no mods/<modname>/ nesting).
-        Derives modname from context."""
+        """Route when the content is flat, with no mods/<modname>/
+        nesting. The modname is worked out from context."""
         modname = self._derive_modname_flat(source_dir, tree, ctx)
         if not modname:
             raise RuntimeError(
@@ -153,8 +153,8 @@ class PalSchemaRecognizer:
     def _find_palschema_dir(
         self, tree: mobase.IFileTree
     ) -> mobase.IFileTree | None:
-        """Find the first directory named PalSchema (case-insensitive)
-        at any depth."""
+        """Find the first directory named PalSchema at any depth. The
+        match ignores case."""
         result: list[mobase.IFileTree] = []
 
         def visit(
@@ -184,8 +184,9 @@ class PalSchemaRecognizer:
         tree: mobase.IFileTree,
         ctx: WalkContext,
     ) -> str:
-        """Derive modname when no mods/<modname>/ structure exists.
-        Priority: wrapping folder above PalSchema > GuessedString."""
+        """Work out the modname when there is no mods/<modname>/
+        structure. First choice is the folder that wraps PalSchema.
+        If there is none, fall back to the GuessedString."""
         palschema_dir = self._find_palschema_dir(tree)
         if palschema_dir is not None:
             parent = palschema_dir.parent()
@@ -201,7 +202,7 @@ class PalSchemaRecognizer:
     def _collect_file_entries(
         dir_entry: mobase.IFileTree,
     ) -> list[tuple[mobase.FileTreeEntry, str]]:
-        """Collect all file entries under a directory with paths
+        """Collect every file entry under a directory. Each path is
         relative to that directory."""
         entries: list[tuple[mobase.FileTreeEntry, str]] = []
 

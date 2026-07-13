@@ -9,16 +9,16 @@ import mobase
 # --- Helpers ----------------------------------------------------------------
 
 def suffix(entry: mobase.FileTreeEntry) -> str:
-    """Lower-case file suffix. mobase preserves the on-disk case in
-    ``entry.suffix()``; archives in the wild use mixed case (``.PAK``,
-    ``.Pak``). Normalising here keeps detection consistent."""
+    """Lower-case file suffix. mobase keeps the on-disk case in
+    ``entry.suffix()``. Real archives use mixed case (``.PAK``,
+    ``.Pak``). Lowercasing here keeps detection consistent."""
     return entry.suffix().lower()
 
 
 def entry_parent_path(
     entry: mobase.FileTreeEntry, tree: mobase.IFileTree
 ) -> str:
-    """Return the parent directory's path-from-tree-root, or ``""``
+    """Return the parent directory's path from the tree root, or ``""``
     for entries directly under the archive root."""
     parent = entry.parent()
     if parent is None or parent is tree:
@@ -41,8 +41,8 @@ def move_to(
     entry: mobase.FileTreeEntry,
     target: str,
 ) -> None:
-    """Move ``entry`` to absolute path ``target`` unless it's already
-    there (some IFileTree implementations balk at self-moves)."""
+    """Move ``entry`` to the absolute path ``target``, unless it is
+    already there. Some IFileTree implementations fail on self-moves."""
     current = entry_full_path(entry, tree)
     if current == target.lstrip("/"):
         return
@@ -50,10 +50,10 @@ def move_to(
 
 
 def resolve_pak_dest_path(decision: str) -> str:
-    """Map a non-SKIP, non-ROOT decision to a destination path.
+    """Map a decision that is not SKIP or ROOT to a destination path.
 
-    Preset values map to fixed ``Content/Paks/<dest>/``. Anything else
-    is treated as a Custom path and used verbatim under the archive root.
+    Preset values map to a fixed ``Content/Paks/<dest>/``. Anything else
+    is treated as a Custom path and used as-is under the archive root.
     """
     if decision == "~mods":
         return "Content/Paks/~mods"
@@ -66,15 +66,15 @@ def ue4ss_mods_base(platform: str) -> str:
     """Return the UE4SS ``Mods`` directory (relative to the game data
     root) that the UE4SS runtime scans for script and plugin mods.
 
-    Single source of truth for this path. The ``ue4ss/`` segment is
-    mandatory -- UE4SS only loads mods placed under
-    ``Binaries/<runtime>/ue4ss/Mods/``; omitting it silently prevents
-    every script mod from loading. ``Win64`` is the Steam runtime,
+    This is the one place that defines this path. The ``ue4ss/`` segment
+    is required. UE4SS only loads mods placed under
+    ``Binaries/<runtime>/ue4ss/Mods/``. Leave it out and every script
+    mod silently fails to load. ``Win64`` is the Steam runtime,
     ``WinGDK`` the Xbox / Game Pass runtime.
 
-    NOTE: the Steam (``Win64``) path is verified against real UE4SS mod
-    archives; the ``WinGDK`` path mirrors the documented Xbox runtime but
-    is not yet confirmed against a live Game Pass install.
+    NOTE: the Steam (``Win64``) path is checked against real UE4SS mod
+    archives. The ``WinGDK`` path follows the documented Xbox runtime,
+    but is not yet confirmed against a live Game Pass install.
     """
     runtime = "WinGDK" if platform == "xbox" else "Win64"
     return f"Binaries/{runtime}/ue4ss/Mods"
@@ -83,12 +83,12 @@ def ue4ss_mods_base(platform: str) -> str:
 # --- Domain models ----------------------------------------------------------
 
 class PlatformVariantMismatch(Exception):
-    """Raised by the orchestrator pre-pass when an archive contains
-    platform marker folders but none match the configured platform.
+    """Raised by an early installer pass when an archive has platform
+    marker folders but none match the configured platform.
 
-    The install must abort with ``InstallResult.FAILED`` before any
-    destructive tree mutation occurs (so that "manual installation"
-    remains a real option for the user).
+    The install must stop with ``InstallResult.FAILED`` before it makes
+    any destructive change to the tree. This keeps "manual installation"
+    a real option for the user.
     """
 
     def __init__(self, available: list[str], configured: str) -> None:
@@ -102,18 +102,18 @@ class PlatformVariantMismatch(Exception):
 
 @dataclass
 class PakGroup:
-    """One .pak stem group: the .pak plus its same-stem .utoc/.ucas
-    companions in the same parent directory, plus any sibling AnimJSON /
-    SwapJSON dirs at the archive root (associated with every root-level
-    group at that scope).
+    """One .pak stem group. This is the .pak plus its same-stem
+    .utoc/.ucas companions in the same parent directory, plus any
+    sibling AnimJSON / SwapJSON dirs at the archive root (linked to
+    every root-level group at that level).
 
-    ``group_id`` is the pak's full path-from-tree-root and serves as the
-    stable key into routing-decision dicts -- two paks sharing a stem in
-    different directories are distinct groups.
+    ``group_id`` is the pak's full path from the tree root. It is the
+    stable key into the routing-decision dicts. Two paks that share a
+    stem in different directories are separate groups.
 
     ``current_parent_path`` is the path of the directory that holds the
-    pak today (``""`` means the archive root). The routing SSOT consumes
-    it to derive the default destination for pre-arranged content.
+    pak now (``""`` means the archive root). The routing logic uses it
+    to work out the default destination for prearranged content.
     """
 
     group_id: str
@@ -127,8 +127,9 @@ class PakGroup:
 @dataclass
 class ScriptMod:
     """One detected main.lua. ``mod_dir`` is the directory the installer
-    moves on INSTALL or removes on SKIP; for ambiguous root-scope main.lua
-    it may equal the tree itself (handled defensively at SKIP time)."""
+    moves on INSTALL or removes on SKIP. For an unclear root-level
+    main.lua it may equal the tree itself, which SKIP handles to be
+    safe."""
 
     main_lua: mobase.FileTreeEntry
     mod_dir: mobase.FileTreeEntry
@@ -159,13 +160,13 @@ DetectionVerdict = RecognitionResult | RequestManual
 
 @dataclass(frozen=True)
 class WalkContext:
-    """Read-only aggregation of every signal gathered from a single
-    ``tree.walk()`` pass. Built by the orchestrator after pre-passes
-    (platform resolution, wrapper stripping, prearranged layout
-    promotion) have been applied to the tree.
+    """Read-only collection of every signal gathered from a single
+    ``tree.walk()`` pass. Built by the installer after the earlier
+    passes (platform resolution, wrapper stripping, moving prearranged
+    folders up) have run on the tree.
 
-    Recognizers receive this in ``detect()``, ``discover()``, and
-    ``route()`` and must not walk the tree on their own.
+    Recognizers get this in ``detect()``, ``discover()``, and
+    ``route()`` and must not walk the tree themselves.
     """
 
     has_fomod: bool
@@ -213,8 +214,8 @@ PlanStep = MoveEntry | RemoveEntry | AddDirectory
 class DiscoveryResult:
     """Returned by a recognizer's ``discover()`` method.
 
-    Provides the data the orchestrator needs to populate the dialog
-    and identify unclaimed files.
+    Provides the data the installer needs to fill the dialog and find
+    unclaimed files.
     """
 
     pak_groups: list[PakGroup] = field(default_factory=list)

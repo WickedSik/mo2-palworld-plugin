@@ -1,7 +1,7 @@
 """Self-tests for the mobase mock layer.
 
-Verify that the mock IFileTree behaves correctly so that downstream
-tests can trust it.
+Check that the mock IFileTree works correctly so that the other tests
+can trust it.
 """
 from __future__ import annotations
 

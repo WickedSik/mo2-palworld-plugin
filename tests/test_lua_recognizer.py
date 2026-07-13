@@ -124,9 +124,9 @@ class TestLuaScriptRecognizerRoute:
         ) is not None
 
     def test_route_places_scripts_under_ue4ss_segment(self):
-        """Regression: the canonical UE4SS Mods path MUST contain the
+        """Regression: the expected UE4SS Mods path MUST contain the
         ``ue4ss/`` segment. Writing to Binaries/Win64/Mods/... (without
-        it) means UE4SS never loads the mod (the M8 defect)."""
+        it) means UE4SS never loads the mod (the M8 bug)."""
         tree = build_tree({
             "MyMod/": {"Scripts/": {"main.lua": FILE}},
         })
@@ -139,11 +139,11 @@ class TestLuaScriptRecognizerRoute:
 
 
 class TestLuaScriptRecognizerPrearranged:
-    """Regression guard for the M8 UE4SS-mod failure: archives that
+    """Regression guard for the M8 UE4SS-mod failure. Some archives
     already ship the full ``Binaries/Win64/ue4ss/Mods/<name>/Scripts/``
     layout (e.g. Expanded World Options 3336, Infinite Weight In Camp
-    214) must SURVIVE routing untouched -- never be demoted by having
-    the ``ue4ss/`` segment stripped."""
+    214). Routing must leave them untouched. It must never move them to
+    the wrong place by stripping the ``ue4ss/`` segment."""
 
     def setup_method(self):
         self.recognizer = LuaScriptRecognizer()
@@ -172,12 +172,12 @@ class TestLuaScriptRecognizerPrearranged:
         ctx = _build_ctx(tree, platform="steam")
         decisions = {"script_0": "INSTALL", "__mod_name__": "TestMod"}
         self.recognizer.route(tree, ctx, decisions)
-        # Still at the canonical path...
+        # Still at the expected path...
         assert tree.find(
             "Binaries/Win64/ue4ss/Mods/ExpandedWorldSettings/"
             "Scripts/main.lua"
         ) is not None
-        # ...sidecars preserved...
+        # ...extra files kept...
         assert tree.find(
             "Binaries/Win64/ue4ss/Mods/ExpandedWorldSettings/enabled.txt"
         ) is not None
@@ -185,15 +185,15 @@ class TestLuaScriptRecognizerPrearranged:
             "Binaries/Win64/ue4ss/Mods/ExpandedWorldSettings/"
             "Scripts/config.lua"
         ) is not None
-        # ...and NOT demoted to the ue4ss-less path.
+        # ...and NOT moved to the wrong path without ue4ss.
         assert tree.find(
             "Binaries/Win64/Mods/ExpandedWorldSettings/Scripts/main.lua"
         ) is None
 
     def test_prearranged_xbox_survives_untouched(self):
-        # NOTE: the WinGDK path is not yet verified against a real Game
-        # Pass install; this asserts internal consistency, not the live
-        # Xbox contract.
+        # NOTE: the WinGDK path is not yet checked against a real Game
+        # Pass install. This checks internal consistency, not the live
+        # Xbox behavior.
         tree = self._prearranged_tree("WinGDK")
         ctx = _build_ctx(tree, platform="xbox")
         decisions = {"script_0": "INSTALL", "__mod_name__": "TestMod"}

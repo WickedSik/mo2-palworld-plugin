@@ -20,11 +20,11 @@ _UE4SS_PLUGIN_RE = re.compile(
 
 
 class Ue4ssPluginRecognizer:
-    """Handles pre-arranged UE4SS plugin archives.
+    """Handles UE4SS plugin archives that are already arranged.
 
     Detects the ``ue4ss/Mods/<name>/dlls/main.dll`` layout used by
     UE4SS plugins (e.g. the PalSchema loader). The archive is already
-    in the correct game-relative structure, so routing is a no-op.
+    in the correct game-relative structure, so routing does nothing.
     """
 
     name = "ue4ss_plugin"

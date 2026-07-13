@@ -40,9 +40,9 @@ class PalworldGame(BasicGame):
     def listSaves(self, folder: QDir) -> list[mobase.ISaveGame]:
         saves = []
         for user_dir in Path(folder.absolutePath()).iterdir():
-            if user_dir.is_dir():  # Assuming this is the Steam user ID directory
+            if user_dir.is_dir():  # This should be the Steam user ID folder
                 for game_save_dir in user_dir.iterdir():
-                    if game_save_dir.is_dir():  # This should be the random game save ID directory
+                    if game_save_dir.is_dir():  # This should be the game save ID folder
                         save_file = game_save_dir / "level.sav"
                         if save_file.exists():
                             saves.append(BasicGameSaveGame(game_save_dir))

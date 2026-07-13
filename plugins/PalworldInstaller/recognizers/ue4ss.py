@@ -11,18 +11,18 @@ from ..models import (
 
 
 class Ue4ssSkipRecognizer:
-    """Detects archives bundling UE4SS (``ue4ss.dll`` present anywhere).
+    """Detects archives that bundle UE4SS (``ue4ss.dll`` present
+    anywhere).
 
-    UE4SS installations require manual placement and should not be
-    rewritten by the automatic installer. Returns ``RequestManual``
-    so the orchestrator can decline the archive.
+    UE4SS installs must be placed by hand. The automatic installer
+    should not rewrite them. Returns ``RequestManual`` so the installer
+    can decline the archive.
 
-    Note: for behavioral parity with the pre-M6 installer, the
-    orchestrator currently handles UE4SS as a pre-pass (returning
-    ``False`` from ``isArchiveSupported``) rather than routing
-    through the recognizer. This recognizer exists for future use
-    when the orchestrator migrates to full recognizer-driven
-    detection.
+    Note: to keep the same behavior as the pre-M6 installer, the
+    installer currently handles UE4SS in a pre-pass. It returns
+    ``False`` from ``isArchiveSupported`` instead of going through the
+    recognizer. This recognizer is here for later use, once the
+    installer moves to full recognizer-driven detection.
     """
 
     name = "ue4ss"

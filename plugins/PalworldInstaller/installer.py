@@ -23,22 +23,22 @@ from .ui.dialog import UnifiedUI
 
 log = logging.getLogger(__name__)
 
-# Canonical platform names recognised inside a marker folder name.
-# `gamepass` is a deprecated alias of `xbox`; both share the WinGDK runtime.
+# Platform names we accept inside a marker folder name.
+# `gamepass` is an old alias of `xbox`. Both use the WinGDK runtime.
 _PLATFORM_BY_MARKER_NAME = {
     "steam": "steam",
     "xbox": "xbox",
     "gamepass": "xbox",
 }
-# Bracket pairs accepted around a marker name. The opener and closer must
-# match -- `[steam}` is not a valid marker.
+# Bracket pairs accepted around a marker name. The opening and closing
+# bracket must match. `[steam}` is not a valid marker.
 _MARKER_BRACKET_PAIRS = {"[": "]", "{": "}", "(": ")"}
 
 
 def _normalize_marker_inner(name: str) -> str:
-    """Return the bracket-stripped, lowercased inner of a marker folder
-    name. Shared by `_extract_marker_platform` and `_is_xbox_marker` so
-    bracket/case rules live in exactly one place."""
+    """Return the inner text of a marker folder name, with brackets
+    removed and lowercased. Shared by `_extract_marker_platform` and
+    `_is_xbox_marker` so the bracket and case rules live in one place."""
     inner = name.strip().lower()
     if (
         len(inner) >= 2
@@ -50,12 +50,12 @@ def _normalize_marker_inner(name: str) -> str:
 
 
 def _extract_marker_platform(name: str) -> str | None:
-    """Return the canonical platform name (`steam`/`xbox`) if `name` is a
-    platform marker, else ``None``.
+    """Return the platform name (`steam`/`xbox`) if `name` is a platform
+    marker, else ``None``.
 
-    Accepted forms (case-insensitive): bare `steam` / `xbox` / `gamepass`,
-    or wrapped in matching `[]` / `{}` / `()` -- `(STEAM)`, `[Xbox]`,
-    `{gamepass}` all resolve.
+    Accepted forms (case does not matter): bare `steam` / `xbox` /
+    `gamepass`, or wrapped in matching `[]` / `{}` / `()`. `(STEAM)`,
+    `[Xbox]`, and `{gamepass}` all match.
     """
     return _PLATFORM_BY_MARKER_NAME.get(_normalize_marker_inner(name))
 
@@ -69,8 +69,9 @@ _VALID_PLATFORMS = ("steam", "xbox")
 _WRAPPER_FOLDERS = ("palworld", "pal")
 _ANIM_SWAP_FOLDERS = ("animjson", "swapjson")
 
-# Suffixes that M1 triage treats as mod content. Used by M5 root-content
-# stripping when marker folders and loose root-level mod files coexist.
+# File suffixes that the first check treats as mod content. Used when
+# marker folders and loose root-level mod files are both present, to
+# strip the root-level files.
 _M1_TRIAGE_SUFFIXES = frozenset({"pak", "utoc", "ucas", "lua", "json"})
 
 
@@ -352,8 +353,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 )
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     return mobase.InstallResult.CANCELED
-                # Per docs/mod-organizer.md §6.1: mutate via update(),
-                # never reassign the local `name` reference.
+                # Per docs/mod-organizer.md §6.1: change the name with
+                # update(). Do not reassign the local `name` reference.
                 name.update(dlg.get_new_mod_name(), mobase.GuessQuality.USER)
                 decisions = self._build_decisions(
                     discovery,
@@ -468,9 +469,9 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             available = [_extract_marker_platform(e.name()) for e in markers]
             raise PlatformVariantMismatch(available, platform)
 
-        # Marker-folder content wins: drop root-level loose mod files that
-        # would otherwise be merged with the lifted marker children
-        # (docs/rebuild.md §3 edge cases).
+        # Marker-folder content wins. Drop loose root-level mod files
+        # that would otherwise get merged with the marker's children
+        # once they are moved up (docs/rebuild.md §3 edge cases).
         self._strip_root_mod_content(tree)
 
         for entry in markers:
@@ -532,19 +533,20 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
 
     @staticmethod
     def _is_xbox_marker(name: str) -> bool:
-        """True iff `name` is the canonical xbox marker (not the
-        deprecated gamepass alias). Used to prefer xbox over gamepass
-        when both are present in the archive."""
+        """True only if `name` is the plain xbox marker, not the old
+        gamepass alias. Used to prefer xbox over gamepass when both are
+        present in the archive."""
         return _normalize_marker_inner(name) == "xbox"
 
     def _promote_prearranged_layout(self, tree: mobase.IFileTree) -> None:
-        """Lift root-level pre-arranged destination dirs into the standard
+        """Move root-level destination folders up into the standard
         ``Content/Paks/<dest>/`` layout.
 
-        Mod authors who place ``LogicMods/`` or ``~Mods/`` at the archive
-        root are expressing destination intent. We MERGE their contents
-        under ``Content/Paks/...`` so the discovery pass finds the paks
-        and the cleanup pass doesn't strip them. Case-insensitive.
+        Some mod authors place ``LogicMods/`` or ``~Mods/`` at the
+        archive root. That tells us where they want the files to go. We
+        MERGE their contents under ``Content/Paks/...`` so the discovery
+        pass finds the paks and the cleanup pass does not strip them.
+        Case does not matter.
         """
         promotions = (
             ("logicmods", "Content/Paks/LogicMods"),
@@ -602,9 +604,9 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         platform: str,
         suggested_mod_name: str,
     ) -> WalkContext:
-        """Single ``tree.walk()`` pass that populates every signal
-        recognizers need. Runs after all pre-passes (platform resolution,
-        wrapper stripping, prearranged layout promotion)."""
+        """One ``tree.walk()`` pass that gathers every signal the
+        recognizers need. Runs after all earlier passes (platform
+        resolution, wrapper stripping, moving prearranged folders up)."""
         has_fomod = False
         has_ue4ss_dll = False
         has_json_deep = False
@@ -683,8 +685,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         script_overrides: list[str] | None = None,
         mod_name: str = "",
     ) -> dict[str, str]:
-        """Merge default routing with dialog overrides into the flat
-        ``decisions`` dict that recognizers consume in ``route()``."""
+        """Merge the default routing with any dialog overrides into the
+        flat ``decisions`` dict that recognizers read in ``route()``."""
         decisions: dict[str, str] = {}
 
         if discovery.pak_groups:
@@ -709,11 +711,12 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         discovery: DiscoveryResult,
         decisions: dict[str, str],
     ) -> set[str]:
-        """Names (lowercased) that survive the post-routing root cleanup.
+        """Names (lowercased) that survive the root cleanup after
+        routing.
 
-        Always: 'content', 'binaries'. Plus, for any pak group routed to
-        ROOT, the pak/companion file names. Plus, for any group routed to
-        a Custom path, the first path segment of that custom path.
+        Always keeps 'content' and 'binaries'. For any pak group routed
+        to ROOT, keeps the pak and companion file names. For any group
+        routed to a Custom path, keeps the first segment of that path.
         """
         allowed: set[str] = {"content", "binaries"}
         for g in discovery.pak_groups:
@@ -738,7 +741,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
     def _log_silent_install(
         self, discovery: DiscoveryResult, mod_name: str
     ) -> None:
-        """Single info-level log line for the silent-install branch."""
+        """Write one info-level log line for the silent-install branch."""
         parts = [
             f"{g.group_id} → "
             f"{discovery.default_routing.get(g.group_id, 'LogicMods')}"
@@ -757,9 +760,9 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
     def _tree_has_installable_content(
         self, tree: mobase.IFileTree
     ) -> bool:
-        """Single-walk validation: returns True if any installable
-        content (.pak, main.lua, .json, or .dll) survived the rewrite.
-        Stops at the first find."""
+        """Check in one walk. Returns True if any installable content
+        (.pak, main.lua, .json, or .dll) survived the rewrite. Stops at
+        the first match."""
         found = [False]
 
         def visit(

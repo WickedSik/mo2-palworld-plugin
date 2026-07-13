@@ -23,12 +23,13 @@ _ANIM_SWAP_FOLDERS = ("animjson", "swapjson")
 
 
 class PakRecognizer:
-    """Handles archives containing ``.pak`` files (plus ``.utoc``/``.ucas``
-    companions, associated AnimJSON/SwapJSON dirs, and loose ``.json`` at
-    root).
+    """Handles archives that hold ``.pak`` files. This also covers their
+    ``.utoc``/``.ucas`` companions, any linked AnimJSON/SwapJSON dirs,
+    and loose ``.json`` files at the root.
 
-    Routes paks to ``Content/Paks/<destination>/`` based on M1 heuristics
-    (stem suffix, json-dir presence) or user dialog choice.
+    Routes paks to ``Content/Paks/<destination>/``. The destination
+    comes from the M1 rules (stem suffix and whether a json dir is
+    present) or from the user's dialog choice.
     """
 
     name = "pak"
@@ -245,8 +246,8 @@ class PakRecognizer:
 
     @staticmethod
     def format_pak_label(g: PakGroup) -> str:
-        """Dialog row label: filename, plus a parent-path hint when the
-        pak is pre-arranged inside an existing directory."""
+        """Label for a dialog row. Shows the filename, and adds a
+        parent-path hint when the pak already sits inside a directory."""
         if g.current_parent_path:
             return f"{g.pak.name()}  ({g.current_parent_path}/)"
         return g.pak.name()

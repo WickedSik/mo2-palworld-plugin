@@ -7,9 +7,9 @@ from ..models import DiscoveryResult, RequestManual, WalkContext
 
 class NoopRecognizer:
     """Catch-all recognizer. Always returns ``RequestManual`` so the
-    orchestrator has a definitive answer for every archive — unclaimed
-    archives surface as ``MANUAL_REQUESTED`` rather than slipping
-    through silently."""
+    installer has a clear answer for every archive. Archives that no
+    other recognizer claimed then show up as ``MANUAL_REQUESTED``
+    instead of passing by unnoticed."""
 
     name = "noop"
     priority = 999

@@ -22,8 +22,8 @@ _PAK_COMPANION_SUFFIXES = frozenset({"pak", "utoc", "ucas"})
 class AltermaticRecognizer:
     """Handles Altermatic mod archives.
 
-    Detects archives containing an ``AnimJSON/`` or ``SwapJSON/`` folder
-    (at any depth) with JSON configuration files. Routes:
+    Detects archives that hold an ``AnimJSON/`` or ``SwapJSON/`` folder
+    (at any depth) with JSON config files. Routes:
     - ``.pak`` with ``_P`` suffix → ``Content/Paks/~mods/``
     - ``.pak`` without ``_P`` suffix → ``Content/Paks/LogicMods/``
     - ``AnimJSON/`` and ``SwapJSON/`` dirs → ``Content/Paks/~mods/{name}/``
@@ -63,8 +63,9 @@ class AltermaticRecognizer:
     def _route_paks(
         self, tree: mobase.IFileTree, ctx: WalkContext
     ) -> None:
-        """Route pak files: _P suffix → ~mods, otherwise → LogicMods.
-        Companions (.utoc/.ucas) follow their pak."""
+        """Route pak files. A ``_P`` suffix goes to ~mods, everything
+        else goes to LogicMods. Companion files (.utoc/.ucas) follow
+        their pak."""
         groups = self._build_pak_groups(ctx, tree)
         for stem, entries in groups.items():
             if stem.endswith("_P"):

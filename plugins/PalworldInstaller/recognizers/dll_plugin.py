@@ -15,26 +15,26 @@ from ..models import (
 
 log = logging.getLogger(__name__)
 
-# A UE4SS C++ plugin shipped un-arranged: `<name>/dlls/main.dll` directly at
-# the archive root (e.g. the PalSchema loader, Nexus 2361). The pre-arranged
-# `ue4ss/Mods/<name>/dlls/main.dll` layout has more path segments and is owned
-# by Ue4ssPluginRecognizer, so the two patterns never overlap.
+# A UE4SS C++ plugin that ships without arrangement: `<name>/dlls/main.dll`
+# sits right at the archive root (e.g. the PalSchema loader, Nexus 2361). The
+# pre-arranged `ue4ss/Mods/<name>/dlls/main.dll` layout has more path segments
+# and belongs to Ue4ssPluginRecognizer, so the two patterns never overlap.
 _ROOT_DLL_PLUGIN_RE = re.compile(r"^[^/]+/dlls/main\.dll$", re.IGNORECASE)
 
 
 class DllPluginRecognizer:
-    """Handles un-arranged UE4SS C++ plugin archives.
+    """Handles UE4SS C++ plugin archives that are not yet arranged.
 
     Detects the standard UE4SS C++ mod layout shipped at the archive
-    root -- ``<name>/dlls/main.dll`` (e.g. the PalSchema loader) -- and
-    arranges the whole ``<name>/`` folder into the directory UE4SS
-    scans: ``Binaries/Win{64|GDK}/ue4ss/Mods/<name>/``. The ``dlls/``,
-    ``enabled.txt`` activation flag, and any ``mods/`` scaffold ride
-    along unchanged.
+    root -- ``<name>/dlls/main.dll`` (e.g. the PalSchema loader). It
+    then moves the whole ``<name>/`` folder into the directory UE4SS
+    scans: ``Binaries/Win{64|GDK}/ue4ss/Mods/<name>/``. The ``dlls/``
+    folder, the ``enabled.txt`` flag, and any empty ``mods/`` folder
+    move along with it, unchanged.
 
     The already-arranged ``ue4ss/Mods/<name>/dlls/main.dll`` layout is a
-    structurally distinct case owned by ``Ue4ssPluginRecognizer`` (which
-    accepts it as-is, priority 25 -- ahead of this recognizer's 30).
+    different case. ``Ue4ssPluginRecognizer`` owns it and accepts it
+    as-is. Its priority 25 runs ahead of this recognizer's 30.
     """
 
     name = "dll_plugin"
@@ -99,8 +99,8 @@ class DllPluginRecognizer:
         tree: mobase.IFileTree, ctx: WalkContext
     ) -> list[mobase.FileTreeEntry]:
         """The root-level ``<name>/`` folders that hold a matching
-        ``dlls/main.dll``. De-duplicated by identity so an archive with
-        several plugins yields one entry per plugin."""
+        ``dlls/main.dll``. Duplicates are removed by identity, so an
+        archive with several plugins gives one entry per plugin."""
         found: dict[int, mobase.FileTreeEntry] = {}
         for entry in ctx.dll_entries:
             if not _ROOT_DLL_PLUGIN_RE.search(entry_full_path(entry, tree)):
@@ -118,9 +118,10 @@ class DllPluginRecognizer:
     def _collect_paths_under(
         dir_entry: mobase.IFileTree, prefix: str, paths: set[str]
     ) -> None:
-        """Collect full tree-root-relative paths of every file under
-        ``dir_entry``. ``prefix`` is ``dir_entry``'s own path from the
-        tree root, so claimed paths match the archive layout."""
+        """Collect the full path of every file under ``dir_entry``,
+        relative to the tree root. ``prefix`` is ``dir_entry``'s own
+        path from the tree root, so claimed paths match the archive
+        layout."""
 
         def visit(
             path: str, entry: mobase.FileTreeEntry

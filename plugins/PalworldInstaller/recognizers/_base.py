@@ -14,17 +14,17 @@ from ..models import (
 class ModRecognizer(Protocol):
     """Interface for archive recognizers.
 
-    Each recognizer handles one class of Palworld mod archive. The
-    orchestrator calls ``detect()`` on every registered recognizer
-    (gather-all), then picks the highest-priority ``MATCH`` or
-    ``RequestManual`` as the winner.
+    Each recognizer handles one kind of Palworld mod archive. The
+    installer calls ``detect()`` on every registered recognizer, then
+    picks the winner. The winner is the highest-priority ``MATCH`` or
+    ``RequestManual``.
 
-    ``detect()`` should use ``ctx`` signals only — no tree walking.
-    ``discover()`` and ``route()`` receive the tree for detailed
-    analysis but should still prefer ``ctx`` when possible.
+    ``detect()`` should only read signals from ``ctx``. It must not
+    walk the tree. ``discover()`` and ``route()`` receive the tree for
+    closer analysis, but they should still prefer ``ctx`` when they can.
 
-    ``route()`` mutates the tree directly — the orchestrator calls
-    it after dialog decisions are finalised.
+    ``route()`` changes the tree in place. The installer calls it after
+    the dialog choices are final.
     """
 
     @property

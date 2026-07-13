@@ -1,11 +1,11 @@
 """Mock mobase module for testing without MO2's C++ bindings.
 
 Provides the subset of mobase types that the PalworldInstaller plugin
-imports. The mock IFileTree is a real mutable data structure — move(),
-remove(), addDirectory() all modify internal state so that post-operation
-assertions work.
+imports. The mock IFileTree is a real, mutable data structure. move(),
+remove(), and addDirectory() all change internal state, so checks made
+after those calls work as expected.
 
-Derived from docs/mod-organizer.md §15 and actual plugin usage.
+Based on docs/mod-organizer.md §15 and how the plugin uses these types.
 """
 from __future__ import annotations
 
@@ -74,9 +74,9 @@ class GuessedString:
 class FileTreeEntry:
     """Mock of mobase.FileTreeEntry.
 
-    In real mobase, IFileTree inherits from FileTreeEntry — directories
-    ARE IFileTree instances. We replicate that: MockIFileTree subclasses
-    FileTreeEntry with isDir()=True.
+    In real mobase, IFileTree inherits from FileTreeEntry. This means
+    directories ARE IFileTree instances. We copy that here: IFileTree
+    subclasses FileTreeEntry and returns isDir()=True.
     """
 
     def __init__(self, name: str, *, is_dir: bool = False):
@@ -106,8 +106,8 @@ class IFileTree(FileTreeEntry):
     """Mock of mobase.IFileTree — a mutable directory tree.
 
     Supports iteration, walk(), find(), addDirectory(), move(),
-    remove(), and removeIf(). Faithful enough for the plugin's
-    tree-rewrite tests.
+    remove(), and removeIf(). This matches real mobase closely enough
+    for the plugin's tree-rewrite tests.
     """
 
     class WalkReturn(Enum):
@@ -202,7 +202,8 @@ class IFileTree(FileTreeEntry):
     # --- addDirectory() ---
 
     def addDirectory(self, path: str) -> "IFileTree":
-        """Create directory at path (creating intermediates). Idempotent."""
+        """Create the directory at path, plus any missing parent
+        directories. Safe to call more than once."""
         parts = [p for p in path.replace("\\", "/").split("/") if p]
         if not parts:
             return self
@@ -287,8 +288,8 @@ class IFileTree(FileTreeEntry):
         self._detach(entry)
 
     def removeIf(self, predicate: Callable[[FileTreeEntry], bool]) -> None:
-        """Remove all entries matching predicate (top-level only,
-        matching mobase semantics)."""
+        """Remove all entries that match predicate. Only the top level is
+        checked, which is how mobase behaves."""
         to_remove = [e for e in self._children if predicate(e)]
         for entry in to_remove:
             self._children.remove(entry)

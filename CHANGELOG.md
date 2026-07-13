@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - UE4SS DLL plugins such as the PalSchema loader are now installed automatically. Previously they were left uninstalled.
 
+### Changed
+- Simplified code comments and docstrings to plainer English. No behavior change.
+
 ### Fixed
 - UE4SS script and PalSchema content mods now load in-game. They were being installed to the wrong folder, so UE4SS never picked them up (affected e.g. Automatically Skip Mod Caution, Expanded World Options, Infinite Weight In Camp).
 
