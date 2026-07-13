@@ -62,6 +62,24 @@ def resolve_pak_dest_path(decision: str) -> str:
     return decision
 
 
+def ue4ss_mods_base(platform: str) -> str:
+    """Return the UE4SS ``Mods`` directory (relative to the game data
+    root) that the UE4SS runtime scans for script and plugin mods.
+
+    Single source of truth for this path. The ``ue4ss/`` segment is
+    mandatory -- UE4SS only loads mods placed under
+    ``Binaries/<runtime>/ue4ss/Mods/``; omitting it silently prevents
+    every script mod from loading. ``Win64`` is the Steam runtime,
+    ``WinGDK`` the Xbox / Game Pass runtime.
+
+    NOTE: the Steam (``Win64``) path is verified against real UE4SS mod
+    archives; the ``WinGDK`` path mirrors the documented Xbox runtime but
+    is not yet confirmed against a live Game Pass install.
+    """
+    runtime = "WinGDK" if platform == "xbox" else "Win64"
+    return f"Binaries/{runtime}/ue4ss/Mods"
+
+
 # --- Domain models ----------------------------------------------------------
 
 class PlatformVariantMismatch(Exception):

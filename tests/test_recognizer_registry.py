@@ -13,11 +13,12 @@ class TestRecognizerRegistry:
         names = [r.name for r in RECOGNIZERS]
         assert len(names) == len(set(names))
 
-    def test_all_seven_recognizers_present(self):
+    def test_all_recognizers_present(self):
         names = [r.name for r in RECOGNIZERS]
-        assert len(names) == 7
+        assert len(names) == 8
         assert "ue4ss" in names
         assert "ue4ss_plugin" in names
+        assert "dll_plugin" in names
         assert "lua_script" in names
         assert "palschema" in names
         assert "altermatic" in names
@@ -27,7 +28,8 @@ class TestRecognizerRegistry:
     def test_expected_priority_order(self):
         name_order = [r.name for r in RECOGNIZERS]
         assert name_order.index("ue4ss") < name_order.index("ue4ss_plugin")
-        assert name_order.index("ue4ss_plugin") < name_order.index("lua_script")
+        assert name_order.index("ue4ss_plugin") < name_order.index("dll_plugin")
+        assert name_order.index("dll_plugin") < name_order.index("lua_script")
         assert name_order.index("lua_script") < name_order.index("palschema")
         assert name_order.index("palschema") < name_order.index("altermatic")
         assert name_order.index("altermatic") < name_order.index("pak")

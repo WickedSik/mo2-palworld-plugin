@@ -67,6 +67,7 @@ def mock_organizer():
         "recognizer.palschema.enabled": True,
         "recognizer.altermatic.enabled": True,
         "recognizer.ue4ss_plugin.enabled": True,
+        "recognizer.dll_plugin.enabled": True,
         "force_dialog": False,
     }
     return org

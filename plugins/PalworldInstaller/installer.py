@@ -154,6 +154,12 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 True,
             ),
             mobase.PluginSetting(
+                "recognizer.dll_plugin.enabled",
+                "enable UE4SS DLL plugin (e.g. PalSchema loader) "
+                "detection and routing",
+                True,
+            ),
+            mobase.PluginSetting(
                 "force_dialog",
                 "debug: always show install dialog, even when the "
                 "skip-when-trivial predicate would bypass it",

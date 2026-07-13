@@ -48,8 +48,12 @@ class TestPalSchemaRecognizerRoute:
         ctx = _build_ctx(tree, platform="steam")
         self.recognizer.route(tree, ctx, {})
         assert tree.find(
-            "Binaries/Win64/Mods/PalSchema/mods/MyMod/schema.json"
+            "Binaries/Win64/ue4ss/Mods/PalSchema/mods/MyMod/schema.json"
         ) is not None
+        # Regression: must NOT land on the ue4ss-less path (M8 defect).
+        assert tree.find(
+            "Binaries/Win64/Mods/PalSchema/mods/MyMod/schema.json"
+        ) is None
 
     def test_structured_layout_xbox(self):
         tree = build_tree({
@@ -62,7 +66,7 @@ class TestPalSchemaRecognizerRoute:
         ctx = _build_ctx(tree, platform="xbox")
         self.recognizer.route(tree, ctx, {})
         assert tree.find(
-            "Binaries/WinGDK/Mods/PalSchema/mods/MyMod/schema.json"
+            "Binaries/WinGDK/ue4ss/Mods/PalSchema/mods/MyMod/schema.json"
         ) is not None
 
     def test_flat_layout_derives_modname_from_context(self):
@@ -75,10 +79,10 @@ class TestPalSchemaRecognizerRoute:
         ctx = _build_ctx(tree, platform="steam")
         self.recognizer.route(tree, ctx, {})
         assert tree.find(
-            "Binaries/Win64/Mods/PalSchema/mods/TestMod/config.json"
+            "Binaries/Win64/ue4ss/Mods/PalSchema/mods/TestMod/config.json"
         ) is not None
         assert tree.find(
-            "Binaries/Win64/Mods/PalSchema/mods/TestMod/rules.json"
+            "Binaries/Win64/ue4ss/Mods/PalSchema/mods/TestMod/rules.json"
         ) is not None
 
     def test_multiple_mod_folders(self):
@@ -93,20 +97,22 @@ class TestPalSchemaRecognizerRoute:
         ctx = _build_ctx(tree, platform="steam")
         self.recognizer.route(tree, ctx, {})
         assert tree.find(
-            "Binaries/Win64/Mods/PalSchema/mods/ModA/a.json"
+            "Binaries/Win64/ue4ss/Mods/PalSchema/mods/ModA/a.json"
         ) is not None
         assert tree.find(
-            "Binaries/Win64/Mods/PalSchema/mods/ModB/b.json"
+            "Binaries/Win64/ue4ss/Mods/PalSchema/mods/ModB/b.json"
         ) is not None
 
     def test_already_correct_layout_is_noop(self):
         tree = build_tree({
             "Binaries/": {
                 "Win64/": {
-                    "Mods/": {
-                        "PalSchema/": {
-                            "mods/": {
-                                "MyMod/": {"schema.json": FILE},
+                    "ue4ss/": {
+                        "Mods/": {
+                            "PalSchema/": {
+                                "mods/": {
+                                    "MyMod/": {"schema.json": FILE},
+                                },
                             },
                         },
                     },
@@ -116,5 +122,5 @@ class TestPalSchemaRecognizerRoute:
         ctx = _build_ctx(tree, platform="steam")
         self.recognizer.route(tree, ctx, {})
         assert tree.find(
-            "Binaries/Win64/Mods/PalSchema/mods/MyMod/schema.json"
+            "Binaries/Win64/ue4ss/Mods/PalSchema/mods/MyMod/schema.json"
         ) is not None

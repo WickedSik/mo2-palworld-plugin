@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ._base import ModRecognizer
 from .altermatic import AltermaticRecognizer
+from .dll_plugin import DllPluginRecognizer
 from .lua_script import LuaScriptRecognizer
 from .noop import NoopRecognizer
 from .pak import PakRecognizer
@@ -12,6 +13,7 @@ from .ue4ss_plugin import Ue4ssPluginRecognizer
 RECOGNIZERS: list[ModRecognizer] = [
     Ue4ssSkipRecognizer(),
     Ue4ssPluginRecognizer(),
+    DllPluginRecognizer(),
     PalSchemaRecognizer(),
     AltermaticRecognizer(),
     LuaScriptRecognizer(),

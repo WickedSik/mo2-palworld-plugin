@@ -10,6 +10,7 @@ from ..models import (
     WalkContext,
     entry_full_path,
     move_to,
+    ue4ss_mods_base,
 )
 
 log = logging.getLogger(__name__)
@@ -20,7 +21,8 @@ class PalSchemaRecognizer:
 
     Detects archives containing a ``PalSchema/`` folder (at any depth)
     with JSON schema files. Routes content to the PalSchema mods
-    directory: ``Binaries/Win{64|GDK}/Mods/PalSchema/mods/<modname>/``.
+    directory under the UE4SS runtime:
+    ``Binaries/Win{64|GDK}/ue4ss/Mods/PalSchema/mods/<modname>/``.
     """
 
     name = "palschema"
@@ -60,35 +62,35 @@ class PalSchemaRecognizer:
                 "PalSchema marker present but folder not found during route"
             )
 
-        win_dir = "Win64" if ctx.platform == "steam" else "WinGDK"
+        mods_base = ue4ss_mods_base(ctx.platform)
         mods_dir = self._find_child_dir(palschema_dir, "mods")
 
         if mods_dir is not None:
             mod_folders = [e for e in mods_dir if e.isDir()]
             if mod_folders:
                 self._route_structured(
-                    tree, mod_folders, win_dir
+                    tree, mod_folders, mods_base
                 )
                 return
             self._route_flat_from(
-                tree, mods_dir, win_dir, ctx
+                tree, mods_dir, mods_base, ctx
             )
             return
 
-        self._route_flat_from(tree, palschema_dir, win_dir, ctx)
+        self._route_flat_from(tree, palschema_dir, mods_base, ctx)
 
     def _route_structured(
         self,
         tree: mobase.IFileTree,
         mod_folders: list[mobase.FileTreeEntry],
-        win_dir: str,
+        mods_base: str,
     ) -> None:
         """Route when archive has PalSchema/mods/<modname>/ structure.
         Each subfolder under mods/ is a separate mod."""
         for mod_folder in mod_folders:
             modname = mod_folder.name()
             dest_base = (
-                f"Binaries/{win_dir}/Mods/PalSchema/mods/{modname}"
+                f"{mods_base}/PalSchema/mods/{modname}"
             )
             entries = self._collect_file_entries(mod_folder)
             if not entries:
@@ -118,7 +120,7 @@ class PalSchemaRecognizer:
         self,
         tree: mobase.IFileTree,
         source_dir: mobase.IFileTree,
-        win_dir: str,
+        mods_base: str,
         ctx: WalkContext,
     ) -> None:
         """Route when content is flat (no mods/<modname>/ nesting).
@@ -131,7 +133,7 @@ class PalSchemaRecognizer:
             )
 
         dest_base = (
-            f"Binaries/{win_dir}/Mods/PalSchema/mods/{modname}"
+            f"{mods_base}/PalSchema/mods/{modname}"
         )
         entries = self._collect_file_entries(source_dir)
         if not entries:

@@ -10,6 +10,7 @@ from ..models import (
     ScriptMod,
     WalkContext,
     entry_full_path,
+    ue4ss_mods_base,
 )
 
 
@@ -20,8 +21,9 @@ class LuaScriptRecognizer:
     """Handles archives containing UE4SS Lua script mods
     (``<modname>/Scripts/main.lua``).
 
-    Routes scripts to ``Binaries/Win64/Mods/<modname>/`` (steam) or
-    ``Binaries/WinGDK/Mods/<modname>/`` (xbox).
+    Routes scripts to ``Binaries/Win64/ue4ss/Mods/<modname>/`` (steam) or
+    ``Binaries/WinGDK/ue4ss/Mods/<modname>/`` (xbox) -- the directory the
+    UE4SS runtime scans. The ``ue4ss/`` segment is mandatory.
     """
 
     name = "lua_script"
@@ -70,10 +72,7 @@ class LuaScriptRecognizer:
         scripts = self._find_scripts(tree, ctx)
         mod_name = decisions.get("__mod_name__", ctx.suggested_mod_name)
 
-        base = (
-            "Binaries/WinGDK/Mods" if ctx.platform == "xbox"
-            else "Binaries/Win64/Mods"
-        )
+        base = ue4ss_mods_base(ctx.platform)
 
         for i, script in enumerate(scripts):
             status = decisions.get(f"script_{i}", "INSTALL")
@@ -109,9 +108,22 @@ class LuaScriptRecognizer:
                 and script.mod_dir is not tree
                 and scripts_parent is not script.mod_dir
             ):
+                mod_dir_target = f"{base}/{target_modname}"
+                if entry_full_path(script.mod_dir, tree) == mod_dir_target:
+                    # Pre-arranged archive already at the canonical UE4SS
+                    # path (e.g. an archive shipping full
+                    # Binaries/Win64/ue4ss/Mods/<name>/). Moving it onto
+                    # itself is a no-op at best and a demotion risk at
+                    # worst -- leave it untouched.
+                    log.info(
+                        f"PalworldInstaller: [lua_script] "
+                        f"{target_modname} already in canonical UE4SS "
+                        f"layout under {mod_dir_target}/"
+                    )
+                    continue
                 tree.move(
                     script.mod_dir,
-                    f"{base}/{target_modname}",
+                    mod_dir_target,
                     policy=mobase.IFileTree.InsertPolicy.REPLACE,
                 )
             elif (
