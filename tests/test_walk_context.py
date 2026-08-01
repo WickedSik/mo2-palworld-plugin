@@ -30,6 +30,21 @@ class TestBuildWalkContext:
         assert ctx.has_ue4ss_dll is False
         assert ctx.platform == "steam"
         assert ctx.suggested_mod_name == "TestMod"
+        assert ctx.use_rootbuilder is False
+
+    def test_rootbuilder_defaults_off(self):
+        """The flag has a default so existing callers and the hand-built
+        contexts across the suite keep working untouched."""
+        tree = build_tree({"mod.pak": FILE})
+        ctx = self.installer._build_walk_context(tree, "steam", "TestMod")
+        assert ctx.use_rootbuilder is False
+
+    def test_rootbuilder_passed_through(self):
+        tree = build_tree({"mod.pak": FILE})
+        ctx = self.installer._build_walk_context(
+            tree, "steam", "TestMod", use_rootbuilder=True
+        )
+        assert ctx.use_rootbuilder is True
 
     def test_empty_archive(self):
         tree = build_tree({})

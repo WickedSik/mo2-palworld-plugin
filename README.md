@@ -13,6 +13,7 @@ PalworldInstaller is a Mod Organizer 2 (MO2) plugin that handles Palworld mod in
 - **Keeps mod files together.** Some mods include `.pak` files plus companion files (`.utoc`, `.ucas`) or extra folders (`AnimJSON`, `SwapJSON`). The plugin treats them as one package so nothing gets separated.
 - **Defers to FOMOD when appropriate.** If a mod uses MO2's standard FOMOD installer, the plugin steps aside and lets MO2 handle it. You can change this in the settings.
 - **Skips framework files.** Files like `ue4ss.dll` belong to the UE4SS modding framework, not to any single mod. The plugin ignores them so they don't get installed as if they were a mod.
+- **Installs UE4SS plugin mods.** Mods that ship a `dlls/main.dll`, like the PalSchema loader, are placed where UE4SS looks for them. If you have Root Builder installed, they are deployed to the game folder for real so Windows can actually load them.
 - **Remembers your previous choices.** If you reinstall a mod, the dialog comes back pre-filled with what you picked last time.
 - **Recognizes older folder names.** Some mods still use `{GAMEPASS}` instead of `{XBOX}`. The plugin understands both.
 
@@ -23,6 +24,7 @@ PalworldInstaller is a Mod Organizer 2 (MO2) plugin that handles Palworld mod in
 - **Mod Organizer 2**, version **2.5.2 or newer**.
 - **Palworld** or **Palworld Dedicated Server**, already set up in MO2.
 - **The `basic_games` plugin.** This ships with MO2 by default, so you most likely already have it.
+- **[Root Builder](https://www.nexusmods.com/skyrimspecialedition/mods/31720) (optional).** Only needed for UE4SS C++ plugin mods, which ship a `dlls/main.dll`. Without it those mods install but often fail to load. Any Root Builder mode except a USVFS-only setup works; copy mode is the default and is fine.
 
 ### Step 1: Add Palworld to MO2's game list
 
@@ -79,6 +81,7 @@ You usually don't need to touch these, but here is what they do:
 | `priority` | Where this plugin sits in MO2's installer queue. Higher means it gets first pick. Default: 120. |
 | `palworld_platform` | Steam or Xbox version of Palworld. Default: `steam`. |
 | `palworld_server_platform` | Steam or Xbox version of the Dedicated Server. Default: `steam`. |
+| `use_rootbuilder` | How UE4SS C++ plugin mods (the ones with a `dlls/main.dll`) get installed. `auto` uses Root Builder when it is installed and enabled, and falls back to the normal layout when it is not. `always` uses Root Builder's layout regardless; `never` keeps the normal layout. Default: `auto`. |
 | `force_dialog` | Always show the install dialog, even when the plugin would normally install silently. Useful for testing. Default: off. |
 
 If you have an older config that uses `gamepass` instead of `xbox`, the plugin treats it as `xbox` and writes a short note to the log. You can leave it alone, but updating to `xbox` is cleaner.
@@ -108,7 +111,13 @@ The plugin only asks when there is a real decision to make. Simple mods (one `.p
 
 **Why are some files in the archive not installed?**
 
-The plugin only installs files it recognizes as Palworld mod files: `.pak` (and their `.utoc` / `.ucas` companions, plus `AnimJSON` / `SwapJSON` folders), `main.lua` script mods, and loose `.json` config files. Anything else sitting at the top of the archive (readmes, screenshots, source files) is left out, because it is not part of what the game actually loads.
+The plugin only installs files it recognizes as Palworld mod files: `.pak` (and their `.utoc` / `.ucas` companions, plus `AnimJSON` / `SwapJSON` folders), `main.lua` script mods, loose `.json` config files, and UE4SS plugin folders containing `dlls/main.dll`. Anything else sitting at the top of the archive (readmes, screenshots, source files) is left out, because it is not part of what the game actually loads.
+
+**I installed a UE4SS plugin mod and the game doesn't load it.**
+
+This affects mods that ship a `dlls/main.dll`, such as the PalSchema loader. Windows loads a `.dll` when the game starts, before MO2's virtual filesystem can step in, so a mod that exists only virtually is often invisible to it. The fix is [Root Builder](https://www.nexusmods.com/skyrimspecialedition/mods/31720): install and enable it, then reinstall the mod. PalworldInstaller detects Root Builder on its own and puts the mod in the `Root/` folder Root Builder deploys from. Any mode except a USVFS-only setup works — copy mode is the default and is fine.
+
+One thing to watch: a mod installed while Root Builder was active keeps its files under `Root/`. If you later disable or remove Root Builder, that mod stops working until you reinstall it.
 
 **The mod installed but the game doesn't see it. What now?**
 

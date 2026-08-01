@@ -68,9 +68,17 @@ def mock_organizer():
         "recognizer.altermatic.enabled": True,
         "recognizer.ue4ss_plugin.enabled": True,
         "recognizer.dll_plugin.enabled": True,
+        "use_rootbuilder": "auto",
         "force_dialog": False,
     }
     return org
+
+
+@pytest.fixture
+def rootbuilder_enabled(mock_organizer):
+    """Make Root Builder look installed and enabled in MO2."""
+    mock_organizer._enabled_plugins.add("Root Builder")
+    return mock_organizer
 
 
 @pytest.fixture

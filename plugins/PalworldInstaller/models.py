@@ -80,6 +80,86 @@ def ue4ss_mods_base(platform: str) -> str:
     return f"Binaries/{runtime}/ue4ss/Mods"
 
 
+ROOT_BUILDER_DIR = "Root"
+"""Top-level folder Kezyma's Root Builder deploys into the game install
+root. Root Builder copies or hard-links ``<mod>/Root/X`` to ``<game>/X``
+when the game launches, bypassing MO2's virtual filesystem."""
+
+DEFAULT_GAME_ROOT_OFFSET = "Pal"
+"""Path from the game install root down to MO2's data root.
+
+Both Palworld and Palworld Server declare ``GameDataPath = "Pal"``, so
+MO2's data root is ``<install>/Pal/`` and every path this module builds
+is relative to it. Root Builder works from the install root instead, so
+its targets need this offset put back in front.
+"""
+
+
+def rootbuilder_ue4ss_mods_base(platform: str) -> str:
+    """The UE4SS ``Mods`` directory written as a Root Builder path.
+
+    The Windows loader maps a ``.dll`` at process start and does not
+    reliably honour USVFS hooks, so UE4SS C++ plugins often fail to load
+    when they are only mapped virtually. Routing them here makes Root
+    Builder place them on disk instead.
+
+    ``ue4ss_mods_base()`` stays the one source of the UE4SS path. This
+    only prefixes it, so the two can never drift apart.
+    """
+    return (
+        f"{ROOT_BUILDER_DIR}/{DEFAULT_GAME_ROOT_OFFSET}/"
+        f"{ue4ss_mods_base(platform)}"
+    )
+
+
+def prune_empty_dirs(
+    tree: mobase.IFileTree,
+    start: mobase.FileTreeEntry | None,
+) -> None:
+    """Remove ``start`` and its ancestors while they are empty
+    directories. Stops at the first non-empty one, and never removes the
+    tree root itself.
+
+    Moving a plugin folder out of ``Binaries/Win64/ue4ss/Mods/`` leaves
+    that chain behind. ``Binaries`` survives the installer's root
+    cleanup, so without this the mod ships an empty skeleton.
+    """
+    node = start
+    while (
+        node is not None
+        and node is not tree
+        and node.isDir()
+        and len(node) == 0
+    ):
+        parent = node.parent()
+        tree.remove(node)
+        node = parent
+
+
+def move_plugin_dir(
+    tree: mobase.IFileTree,
+    plugin_dir: mobase.FileTreeEntry,
+    base: str,
+) -> str | None:
+    """Move a UE4SS plugin folder to ``<base>/<name>``.
+
+    Returns the destination path, or ``None`` when the folder is already
+    there. Directories left empty by the move are pruned.
+
+    The already-there check ignores case. Archive casing varies, and
+    both recognizer patterns match case-insensitively, so the guard has
+    to as well -- a self-move can fail on a real IFileTree.
+    """
+    target = f"{base}/{plugin_dir.name()}"
+    if entry_full_path(plugin_dir, tree).lower() == target.lower():
+        return None
+
+    old_parent = plugin_dir.parent()
+    tree.move(plugin_dir, target, policy=mobase.IFileTree.InsertPolicy.REPLACE)
+    prune_empty_dirs(tree, old_parent)
+    return target
+
+
 # --- Domain models ----------------------------------------------------------
 
 class PlatformVariantMismatch(Exception):
@@ -160,10 +240,11 @@ DetectionVerdict = RecognitionResult | RequestManual
 
 @dataclass(frozen=True)
 class WalkContext:
-    """Read-only collection of every signal gathered from a single
-    ``tree.walk()`` pass. Built by the installer after the earlier
-    passes (platform resolution, wrapper stripping, moving prearranged
-    folders up) have run on the tree.
+    """Read-only signals for one install: everything gathered from a
+    single ``tree.walk()`` pass, plus the resolved settings recognizers
+    need (``platform``, ``use_rootbuilder``). Built by the installer
+    after the earlier passes (platform resolution, wrapper stripping,
+    moving prearranged folders up) have run on the tree.
 
     Recognizers get this in ``detect()``, ``discover()``, and
     ``route()`` and must not walk the tree themselves.
@@ -182,6 +263,20 @@ class WalkContext:
     deep_folder_names: frozenset[str]
     platform: str
     suggested_mod_name: str
+    use_rootbuilder: bool = False
+
+
+def ue4ss_plugin_dest_base(ctx: WalkContext) -> str:
+    """Where UE4SS C++ DLL plugins go.
+
+    Only ``ue4ss_plugin`` and ``dll_plugin`` call this. Lua scripts,
+    PalSchema content, paks, and json stay on ``ue4ss_mods_base()`` --
+    they load fine through the virtual filesystem and gain nothing from
+    Root Builder.
+    """
+    if ctx.use_rootbuilder:
+        return rootbuilder_ue4ss_mods_base(ctx.platform)
+    return ue4ss_mods_base(ctx.platform)
 
 
 # --- Plan steps --------------------------------------------------------------
@@ -224,3 +319,10 @@ class DiscoveryResult:
     claimed_paths: set[str] = field(default_factory=set)
     should_show_dialog: bool = False
     routing_summary: list[str] = field(default_factory=list)
+    extra_root_names: set[str] = field(default_factory=set)
+    """Extra top-level directory names that must survive root cleanup.
+
+    A recognizer that routes into a directory the installer does not
+    know about -- Root Builder's ``Root/`` is the only one today --
+    declares it here. Matched case-insensitively.
+    """

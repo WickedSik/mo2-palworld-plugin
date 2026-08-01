@@ -6,11 +6,13 @@ import re
 import mobase
 
 from ..models import (
+    ROOT_BUILDER_DIR,
     DiscoveryResult,
     RecognitionResult,
     WalkContext,
     entry_full_path,
-    ue4ss_mods_base,
+    move_plugin_dir,
+    ue4ss_plugin_dest_base,
 )
 
 log = logging.getLogger(__name__)
@@ -32,9 +34,13 @@ class DllPluginRecognizer:
     folder, the ``enabled.txt`` flag, and any empty ``mods/`` folder
     move along with it, unchanged.
 
+    When Root Builder is active the destination gains its ``Root/Pal/``
+    prefix instead, so the DLL is deployed to disk rather than mapped
+    virtually. ``ue4ss_plugin_dest_base()`` decides which applies.
+
     The already-arranged ``ue4ss/Mods/<name>/dlls/main.dll`` layout is a
-    different case. ``Ue4ssPluginRecognizer`` owns it and accepts it
-    as-is. Its priority 25 runs ahead of this recognizer's 30.
+    different case. ``Ue4ssPluginRecognizer`` owns it. Its priority 25
+    runs ahead of this recognizer's 30.
     """
 
     name = "dll_plugin"
@@ -61,6 +67,9 @@ class DllPluginRecognizer:
         return DiscoveryResult(
             claimed_paths=claimed,
             should_show_dialog=False,
+            extra_root_names=(
+                {ROOT_BUILDER_DIR.lower()} if ctx.use_rootbuilder else set()
+            ),
         )
 
     def route(
@@ -69,27 +78,23 @@ class DllPluginRecognizer:
         ctx: WalkContext,
         decisions: dict[str, str],
     ) -> None:
-        base = ue4ss_mods_base(ctx.platform)
+        base = ue4ss_plugin_dest_base(ctx)
 
         for plugin_dir in self._plugin_dirs(tree, ctx):
             name = plugin_dir.name()
-            target = f"{base}/{name}"
+            target = move_plugin_dir(tree, plugin_dir, base)
 
-            if entry_full_path(plugin_dir, tree) == target:
+            if target is None:
                 log.info(
                     f"PalworldInstaller: [dll_plugin] {name} already "
-                    f"in canonical UE4SS layout under {target}/"
+                    f"in place under {base}/{name}/"
                 )
                 continue
 
             log.info(
                 f"PalworldInstaller: [dll_plugin] routing {name}/ "
-                f"-> {target}/"
-            )
-            tree.move(
-                plugin_dir,
-                target,
-                policy=mobase.IFileTree.InsertPolicy.REPLACE,
+                f"-> {target}/ (root builder: "
+                f"{'yes' if ctx.use_rootbuilder else 'no'})"
             )
 
     # --- internal ------------------------------------------------------------

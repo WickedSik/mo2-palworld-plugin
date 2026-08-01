@@ -34,6 +34,12 @@ _PLATFORM_BY_MARKER_NAME = {
 # bracket must match. `[steam}` is not a valid marker.
 _MARKER_BRACKET_PAIRS = {"[": "]", "{": "}", "(": ")"}
 
+# Names Root Builder may register itself under. The docs call it
+# "Root Builder"; MO2 matches on the plugin's own `name()`, so try both
+# spellings rather than guess wrong and silently never detect it.
+_ROOTBUILDER_PLUGIN_NAMES = ("Root Builder", "RootBuilder")
+_VALID_ROOTBUILDER_MODES = ("auto", "always", "never")
+
 
 def _normalize_marker_inner(name: str) -> str:
     """Return the inner text of a marker folder name, with brackets
@@ -161,6 +167,13 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 True,
             ),
             mobase.PluginSetting(
+                "use_rootbuilder",
+                "route UE4SS C++ DLL plugins through Root Builder's "
+                "Root/ folder so they deploy physically "
+                "(auto | always | never)",
+                "auto",
+            ),
+            mobase.PluginSetting(
                 "force_dialog",
                 "debug: always show install dialog, even when the "
                 "skip-when-trivial predicate would bypass it",
@@ -254,6 +267,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
     ) -> mobase.InstallResult | mobase.IFileTree:
         try:
             platform = self._resolve_platform()
+            use_rootbuilder = self._resolve_use_rootbuilder()
             had_markers = self._apply_platform_variant(tree, platform)
 
             for wrapper in _WRAPPER_FOLDERS:
@@ -261,7 +275,12 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
 
             self._promote_prearranged_layout(tree)
 
-            ctx = self._build_walk_context(tree, platform, str(name))
+            ctx = self._build_walk_context(
+                tree,
+                platform,
+                str(name),
+                use_rootbuilder=use_rootbuilder,
+            )
 
             log.debug(
                 f"PalworldInstaller: WalkContext for {str(name)}: "
@@ -270,7 +289,8 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
                 f"companions={len(ctx.companion_entries)} "
                 f"fomod={ctx.has_fomod} ue4ss={ctx.has_ue4ss_dll} "
                 f"dll={len(ctx.dll_entries)} "
-                f"json_deep={ctx.has_json_deep}"
+                f"json_deep={ctx.has_json_deep} "
+                f"rootbuilder={ctx.use_rootbuilder}"
             )
 
             active_recognizers = [
@@ -447,6 +467,58 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         )
         return "steam"
 
+    def _rootbuilder_detected(self) -> bool:
+        """True when Root Builder is installed and enabled in MO2."""
+        for candidate in _ROOTBUILDER_PLUGIN_NAMES:
+            try:
+                if self._organizer.isPluginEnabled(candidate):
+                    return True
+            except Exception:
+                log.debug(
+                    f"PalworldInstaller: isPluginEnabled({candidate!r}) "
+                    f"raised; treating as not installed"
+                )
+        return False
+
+    def _resolve_use_rootbuilder(self) -> bool:
+        """Whether UE4SS C++ DLL plugins go into Root Builder's ``Root/``
+        folder this install.
+
+        Root Builder is a complement, never a requirement. On ``auto``
+        we use it when it is there and fall back to the normal layout
+        when it is not.
+        """
+        raw = self._organizer.pluginSetting(self.name(), "use_rootbuilder")
+        mode = str(raw).strip().lower() if raw is not None else "auto"
+
+        if mode not in _VALID_ROOTBUILDER_MODES:
+            log.warning(
+                f'PalworldInstaller: unknown use_rootbuilder value '
+                f'"{mode}"; falling back to "auto".'
+            )
+            mode = "auto"
+
+        if mode == "never":
+            return False
+
+        detected = self._rootbuilder_detected()
+
+        if mode == "always":
+            if not detected:
+                log.warning(
+                    "PalworldInstaller: use_rootbuilder=always but Root "
+                    "Builder was not detected. UE4SS DLL plugins will be "
+                    "routed through Root/ anyway and will not deploy "
+                    "until Root Builder is installed and enabled."
+                )
+            return True
+
+        log.debug(
+            f"PalworldInstaller: Root Builder detected={detected} "
+            f"(mode={mode})"
+        )
+        return detected
+
     def _apply_platform_variant(
         self, tree: mobase.IFileTree, platform: str
     ) -> bool:
@@ -603,6 +675,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         tree: mobase.IFileTree,
         platform: str,
         suggested_mod_name: str,
+        use_rootbuilder: bool = False,
     ) -> WalkContext:
         """One ``tree.walk()`` pass that gathers every signal the
         recognizers need. Runs after all earlier passes (platform
@@ -676,6 +749,7 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
             deep_folder_names=frozenset(deep_folder_names),
             platform=platform,
             suggested_mod_name=suggested_mod_name,
+            use_rootbuilder=use_rootbuilder,
         )
 
     @staticmethod
@@ -717,8 +791,12 @@ class PalworldInstaller(mobase.IPluginInstallerSimple):
         Always keeps 'content' and 'binaries'. For any pak group routed
         to ROOT, keeps the pak and companion file names. For any group
         routed to a Custom path, keeps the first segment of that path.
+        Recognizers add anything else they routed into via
+        ``extra_root_names`` (Root Builder's 'Root' is the only one
+        today).
         """
         allowed: set[str] = {"content", "binaries"}
+        allowed.update(n.lower() for n in discovery.extra_root_names)
         for g in discovery.pak_groups:
             decision = decisions.get(g.group_id, "LogicMods")
             if decision == "SKIP":

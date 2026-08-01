@@ -15,7 +15,7 @@ from plugins.PalworldInstaller.recognizers.dll_plugin import (
 )
 
 
-def _build_ctx(tree, platform="steam"):
+def _build_ctx(tree, platform="steam", use_rootbuilder=False):
     dll_entries = []
 
     def visit(path, entry):
@@ -39,6 +39,7 @@ def _build_ctx(tree, platform="steam"):
         deep_folder_names=frozenset(),
         platform=platform,
         suggested_mod_name="TestMod",
+        use_rootbuilder=use_rootbuilder,
     )
 
 
@@ -112,6 +113,8 @@ class TestDllPluginRecognizerRoute:
         assert tree.find(
             "Binaries/Win64/Mods/PalSchema/dlls/main.dll"
         ) is None
+        # Root Builder is off, so nothing goes near Root/.
+        assert tree.find("Root") is None
 
     def test_palschema_framework_xbox(self):
         # NOTE: the WinGDK path is not yet checked against a real Game
@@ -153,6 +156,55 @@ class TestDllPluginRecognizerRoute:
         ) is not None
 
 
+class TestDllPluginRootBuilderRoute:
+    """With Root Builder active the payload goes under Root/Pal/ so it
+    is deployed to disk instead of mapped through the virtual
+    filesystem."""
+
+    def setup_method(self):
+        self.recognizer = DllPluginRecognizer()
+
+    def test_palschema_steam(self):
+        tree = _palschema_tree()
+        ctx = _build_ctx(tree, platform="steam", use_rootbuilder=True)
+        self.recognizer.route(tree, ctx, {})
+        base = "Root/Pal/Binaries/Win64/ue4ss/Mods/PalSchema"
+        assert tree.find(f"{base}/dlls/main.dll") is not None
+        assert tree.find(f"{base}/enabled.txt") is not None
+        assert tree.find(f"{base}/mods") is not None
+        assert tree.find("PalSchema") is None
+
+    def test_palschema_xbox(self):
+        # NOTE: the WinGDK path is not yet checked against a real Game
+        # Pass install. This only checks internal consistency.
+        tree = _palschema_tree()
+        ctx = _build_ctx(tree, platform="xbox", use_rootbuilder=True)
+        self.recognizer.route(tree, ctx, {})
+        assert tree.find(
+            "Root/Pal/Binaries/WinGDK/ue4ss/Mods/PalSchema/dlls/main.dll"
+        ) is not None
+
+    def test_root_is_the_only_top_level_folder(self):
+        """Everything must sit under one Root/, or the installer's root
+        cleanup and Root Builder itself would disagree about the mod."""
+        tree = _palschema_tree()
+        ctx = _build_ctx(tree, use_rootbuilder=True)
+        self.recognizer.route(tree, ctx, {})
+        assert [e.name() for e in tree] == ["Root"]
+
+    def test_multiple_plugins_share_one_root(self):
+        tree = build_tree({
+            "PluginA/": {"dlls/": {"main.dll": FILE}},
+            "PluginB/": {"dlls/": {"main.dll": FILE}},
+        })
+        ctx = _build_ctx(tree, use_rootbuilder=True)
+        self.recognizer.route(tree, ctx, {})
+        base = "Root/Pal/Binaries/Win64/ue4ss/Mods"
+        assert tree.find(f"{base}/PluginA/dlls/main.dll") is not None
+        assert tree.find(f"{base}/PluginB/dlls/main.dll") is not None
+        assert [e.name() for e in tree] == ["Root"]
+
+
 class TestDllPluginRecognizerDiscover:
     def setup_method(self):
         self.recognizer = DllPluginRecognizer()
@@ -164,3 +216,16 @@ class TestDllPluginRecognizerDiscover:
         assert "PalSchema/dlls/main.dll" in result.claimed_paths
         assert "PalSchema/enabled.txt" in result.claimed_paths
         assert result.should_show_dialog is False
+
+    def test_no_extra_root_names_without_rootbuilder(self):
+        tree = _palschema_tree()
+        result = self.recognizer.discover(tree, _build_ctx(tree))
+        assert result.extra_root_names == set()
+
+    def test_claims_root_when_rootbuilder_active(self):
+        """discover() and route() read the same ctx flag, so the folder
+        the cleanup pass keeps always matches the one route() creates."""
+        tree = _palschema_tree()
+        ctx = _build_ctx(tree, use_rootbuilder=True)
+        result = self.recognizer.discover(tree, ctx)
+        assert result.extra_root_names == {"root"}

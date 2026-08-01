@@ -26,6 +26,26 @@ class TestComputeAllowedRootNames:
     def setup_method(self):
         self.installer = PalworldInstaller()
 
+    def test_extra_root_names_are_kept(self):
+        """A recognizer that routes into Root Builder's Root/ declares
+        it here, or the cleanup pass deletes the whole install."""
+        discovery = DiscoveryResult(extra_root_names={"Root"})
+        result = self.installer._compute_allowed_root_names(discovery, {})
+        assert "root" in result
+
+    def test_extra_root_names_are_lowercased(self):
+        discovery = DiscoveryResult(extra_root_names={"RoOt"})
+        result = self.installer._compute_allowed_root_names(discovery, {})
+        assert "root" in result
+
+    def test_root_is_not_kept_by_default(self):
+        """A stray Root/ in an unrelated archive must still be stripped
+        -- Root Builder would otherwise deploy it into the game."""
+        result = self.installer._compute_allowed_root_names(
+            DiscoveryResult(), {}
+        )
+        assert "root" not in result
+
     def test_always_includes_content_and_binaries(self):
         discovery = DiscoveryResult()
         decisions = {}

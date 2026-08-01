@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- UE4SS C++ DLL plugin mods are now routed through [Root Builder](https://www.nexusmods.com/skyrimspecialedition/mods/31720) when it is installed and enabled, so their `.dll` files are placed in the game folder for real instead of being mapped virtually. Windows loads a `.dll` at game start, before MO2's virtual filesystem can step in, which is why these mods often failed to load. Controlled by the new `use_rootbuilder` setting (`auto` by default, so nothing changes if you do not have Root Builder).
+
+### Fixed
+- Archives shipping a top-level `ue4ss/Mods/<name>/dlls/main.dll` folder installed nothing at all. The folder was accepted as-is and then removed by the final cleanup pass. It is now moved into `Binaries/Win64/ue4ss/Mods/<name>/` (or `WinGDK` on Xbox).
+
 ## [0.6.0] - 2026-07-13
 
 ### Added
